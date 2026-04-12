@@ -329,6 +329,38 @@ export async function getMeshNodeState(key: string): Promise<string | null> {
   return row ? row.value : null;
 }
 
+// --- Delivery upsert (for full sync) ---
+
+export async function upsertLocalDelivery(d: {
+  id: string; source_node_id: string; target_node_id: string;
+  vehicle_type?: string; priority?: string; status?: string;
+  supply_id?: string; driver_id?: string; created_at?: string;
+}): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT INTO local_deliveries (id, source_node_id, target_node_id, vehicle_type, priority, status, supply_id, driver_id, synced, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       status = excluded.status,
+       synced = 1`,
+    [d.id, d.source_node_id, d.target_node_id, d.vehicle_type || 'truck', d.priority || 'P2', d.status || 'pending', d.supply_id || null, d.driver_id || null, d.created_at || new Date().toISOString()],
+  );
+}
+
+export async function upsertPodReceipt(r: {
+  id: string; delivery_id: string; sender_device_id: string; receiver_device_id: string;
+  sender_signature: string; receiver_signature?: string | null; payload_hash: string;
+  nonce: string; status: string; created_at?: string;
+}): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT INTO pod_receipts (id, delivery_id, sender_device_id, receiver_device_id, sender_signature, receiver_signature, payload_hash, nonce, status, synced, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+     ON CONFLICT(id) DO UPDATE SET status = excluded.status, receiver_signature = COALESCE(excluded.receiver_signature, pod_receipts.receiver_signature)`,
+    [r.id, r.delivery_id, r.sender_device_id, r.receiver_device_id, r.sender_signature, r.receiver_signature || null, r.payload_hash, r.nonce, r.status, r.created_at || new Date().toISOString()],
+  );
+}
+
 // --- Sync state (vector clock persistence) ---
 
 export async function getVectorClock(): Promise<Record<string, number>> {

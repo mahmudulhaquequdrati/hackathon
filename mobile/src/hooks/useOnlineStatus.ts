@@ -1,33 +1,60 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 
 /**
- * Checks whether the configured backend (local or remote) is reachable.
- * Works with both internet-based servers and local LAN backends.
- * Checks every 5 seconds with a 3-second timeout for fast detection.
+ * Shared online status — only ONE health check loop runs globally,
+ * no matter how many components call useOnlineStatus().
  */
-export function useOnlineStatus(intervalMs = 5_000) {
-  const [isOnline, setIsOnline] = useState(false);
-  const mounted = useRef(true);
 
-  const check = useCallback(async () => {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3000); // 3s timeout
-      await api.request('/health', { signal: controller.signal });
-      clearTimeout(timeout);
-      if (mounted.current) setIsOnline(true);
-    } catch {
-      if (mounted.current) setIsOnline(false);
+let _isOnline = false;
+let _listeners: Set<(v: boolean) => void> = new Set();
+let _intervalId: ReturnType<typeof setInterval> | null = null;
+
+async function check() {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    await api.request('/health', { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!_isOnline) {
+      _isOnline = true;
+      _listeners.forEach(fn => fn(true));
     }
-  }, []);
+  } catch {
+    if (_isOnline) {
+      _isOnline = false;
+      _listeners.forEach(fn => fn(false));
+    }
+  }
+}
+
+function startPolling() {
+  if (_intervalId) return;
+  check();
+  _intervalId = setInterval(check, 10_000); // check every 10s
+}
+
+function stopPolling() {
+  if (_intervalId) {
+    clearInterval(_intervalId);
+    _intervalId = null;
+  }
+}
+
+export function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(_isOnline);
 
   useEffect(() => {
-    mounted.current = true;
-    check();
-    const id = setInterval(check, intervalMs);
-    return () => { mounted.current = false; clearInterval(id); };
-  }, [intervalMs, check]);
+    _listeners.add(setIsOnline);
+    startPolling();
+    // Sync current value in case it changed before mount
+    setIsOnline(_isOnline);
+
+    return () => {
+      _listeners.delete(setIsOnline);
+      if (_listeners.size === 0) stopPolling();
+    };
+  }, []);
 
   return isOnline;
 }

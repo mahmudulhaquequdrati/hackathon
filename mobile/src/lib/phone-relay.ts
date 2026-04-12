@@ -15,6 +15,145 @@
 import TcpSocket from 'react-native-tcp-socket';
 import { log } from './debug';
 
+// ── Minimal SHA-1 for WebSocket handshake (pure JS) ────────────────
+
+function sha1(msg: string): string {
+  function rotl(n: number, s: number) { return (n << s) | (n >>> (32 - s)); }
+  const bytes: number[] = [];
+  for (let i = 0; i < msg.length; i++) bytes.push(msg.charCodeAt(i));
+  bytes.push(0x80);
+  while ((bytes.length % 64) !== 56) bytes.push(0);
+  const bitLen = msg.length * 8;
+  bytes.push(0, 0, 0, 0, (bitLen >>> 24) & 0xff, (bitLen >>> 16) & 0xff, (bitLen >>> 8) & 0xff, bitLen & 0xff);
+
+  let h0 = 0x67452301, h1 = 0xEFCDAB89, h2 = 0x98BADCFE, h3 = 0x10325476, h4 = 0xC3D2E1F0;
+  for (let i = 0; i < bytes.length; i += 64) {
+    const w: number[] = [];
+    for (let j = 0; j < 16; j++) w[j] = (bytes[i + j * 4] << 24) | (bytes[i + j * 4 + 1] << 16) | (bytes[i + j * 4 + 2] << 8) | bytes[i + j * 4 + 3];
+    for (let j = 16; j < 80; j++) w[j] = rotl(w[j - 3] ^ w[j - 8] ^ w[j - 14] ^ w[j - 16], 1);
+    let a = h0, b = h1, c = h2, d = h3, e = h4;
+    for (let j = 0; j < 80; j++) {
+      let f: number, k: number;
+      if (j < 20) { f = (b & c) | (~b & d); k = 0x5A827999; }
+      else if (j < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1; }
+      else if (j < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
+      else { f = b ^ c ^ d; k = 0xCA62C1D6; }
+      const t = (rotl(a, 5) + f + e + k + w[j]) >>> 0;
+      e = d; d = c; c = rotl(b, 30) >>> 0; b = a; a = t;
+    }
+    h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0; h2 = (h2 + c) >>> 0; h3 = (h3 + d) >>> 0; h4 = (h4 + e) >>> 0;
+  }
+  const hex = [h0, h1, h2, h3, h4].map(v => ('00000000' + v.toString(16)).slice(-8)).join('');
+  // Convert hex to binary string then to base64
+  let bin = '';
+  for (let i = 0; i < hex.length; i += 2) bin += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+  return btoa(bin);
+}
+
+// ── WebSocket framing ──────────────────────────────────────────────
+
+const WS_GUID = '258EAFA5-E914-47DA-95CA-5AB5C11BE70A';
+
+function wsAcceptKey(clientKey: string): string {
+  return sha1(clientKey + WS_GUID);
+}
+
+function wsEncodeFrame(payload: string): string {
+  const data = payload;
+  const len = byteLength(data);
+  let header: number[] = [0x81]; // FIN + text opcode
+  if (len < 126) {
+    header.push(len);
+  } else if (len < 65536) {
+    header.push(126, (len >> 8) & 0xff, len & 0xff);
+  } else {
+    header.push(127, 0, 0, 0, 0, (len >> 24) & 0xff, (len >> 16) & 0xff, (len >> 8) & 0xff, len & 0xff);
+  }
+  return String.fromCharCode(...header) + data;
+}
+
+function wsDecodeFrame(raw: string): { opcode: number; payload: string } | null {
+  if (raw.length < 2) return null;
+  const byte0 = raw.charCodeAt(0);
+  const byte1 = raw.charCodeAt(1);
+  const opcode = byte0 & 0x0f;
+  const masked = (byte1 & 0x80) !== 0;
+  let payloadLen = byte1 & 0x7f;
+  let offset = 2;
+  if (payloadLen === 126) {
+    payloadLen = (raw.charCodeAt(2) << 8) | raw.charCodeAt(3);
+    offset = 4;
+  }
+  const maskKey = masked ? [raw.charCodeAt(offset), raw.charCodeAt(offset + 1), raw.charCodeAt(offset + 2), raw.charCodeAt(offset + 3)] : [];
+  if (masked) offset += 4;
+  let payload = '';
+  for (let i = 0; i < payloadLen; i++) {
+    const byte = raw.charCodeAt(offset + i);
+    payload += String.fromCharCode(masked ? byte ^ maskKey[i % 4] : byte);
+  }
+  return { opcode, payload };
+}
+
+// Connected WebSocket clients
+const wsClients: Set<any> = new Set();
+
+/** Broadcast an event to all connected WebSocket clients */
+export function wsBroadcast(type: string, data: any): void {
+  const msg = JSON.stringify({ type, data, timestamp: new Date().toISOString() });
+  const frame = wsEncodeFrame(msg);
+  for (const socket of wsClients) {
+    try {
+      socket.write(frame, 'binary');
+    } catch {
+      wsClients.delete(socket);
+    }
+  }
+}
+
+function handleWebSocketUpgrade(raw: string, socket: any): boolean {
+  const lines = raw.split('\r\n');
+  const upgradeHeader = lines.find(l => l.toLowerCase().startsWith('upgrade:'));
+  if (!upgradeHeader || !upgradeHeader.toLowerCase().includes('websocket')) return false;
+
+  const keyLine = lines.find(l => l.toLowerCase().startsWith('sec-websocket-key:'));
+  if (!keyLine) return false;
+  const clientKey = keyLine.split(':')[1].trim();
+  const acceptKey = wsAcceptKey(clientKey);
+
+  const response = [
+    'HTTP/1.1 101 Switching Protocols',
+    'Upgrade: websocket',
+    'Connection: Upgrade',
+    `Sec-WebSocket-Accept: ${acceptKey}`,
+    '',
+    '',
+  ].join('\r\n');
+
+  socket.write(response);
+  wsClients.add(socket);
+  log('info', `WebSocket client connected (${wsClients.size} total)`);
+
+  // Handle incoming WS frames (ping/pong/close)
+  socket.on('data', (chunk: Buffer | string) => {
+    const frame = wsDecodeFrame(chunk.toString('binary'));
+    if (!frame) return;
+    if (frame.opcode === 0x8) {
+      // Close frame
+      wsClients.delete(socket);
+      try { socket.destroy(); } catch {}
+    } else if (frame.opcode === 0x9) {
+      // Ping — respond with pong
+      const pong = String.fromCharCode(0x8a, 0x00);
+      try { socket.write(pong, 'binary'); } catch {}
+    }
+  });
+
+  socket.on('error', () => { wsClients.delete(socket); });
+  socket.on('close', () => { wsClients.delete(socket); });
+
+  return true;
+}
+
 // ── In-memory data stores ──────────────────────────────────────────
 
 interface RelayMessage {
@@ -293,6 +432,7 @@ function handleRequest(req: HttpRequest): string {
       const tokenParts = authHeader.replace('Bearer relay-jwt-', '').split('-');
       if (tokenParts.length > 0) msg.source_device_id = tokenParts[0];
       messages.set(msg.id, msg);
+      wsBroadcast('mesh:new_message', msg);
       return ok({ message: msg });
     }
 
@@ -513,7 +653,7 @@ function handleRequest(req: HttpRequest): string {
         created_at: new Date().toISOString(),
       };
       deliveries.set(d.id, d);
-      // Return delivery directly in data (matches real backend format)
+      wsBroadcast('DELIVERY_CREATED', d);
       return ok(d);
     }
 
@@ -525,6 +665,7 @@ function handleRequest(req: HttpRequest): string {
       const d = deliveries.get(deliveryId);
       if (d) {
         d.status = b.status;
+        wsBroadcast('DELIVERY_STATUS_CHANGED', d);
         return ok(d);
       }
       return notFound();
@@ -555,7 +696,11 @@ function handleRequest(req: HttpRequest): string {
       podReceipts.set(receipt.id, receipt);
       // Update delivery status
       const d = deliveries.get(deliveryId);
-      if (d) d.status = 'delivered';
+      if (d) {
+        d.status = 'delivered';
+        wsBroadcast('DELIVERY_STATUS_CHANGED', d);
+      }
+      wsBroadcast('POD_CONFIRMED', receipt);
       return ok(receipt);
     }
 
@@ -715,14 +860,25 @@ export function startRelay(port: number = 8735): Promise<string> {
       server = TcpSocket.createServer((socket: any) => {
         let data = '';
         let handled = false;
+        let isWs = false;
 
         socket.on('data', (chunk: Buffer | string) => {
-          if (handled) return; // Already responded to this connection
+          if (isWs) return; // WebSocket frames handled by handleWebSocketUpgrade listener
+          if (handled) return;
           data += chunk.toString();
 
-          // Check if we have the full request (Content-Length based or no body)
           const headerEnd = data.indexOf('\r\n\r\n');
-          if (headerEnd === -1) return; // Still waiting for headers
+          if (headerEnd === -1) return;
+
+          // Check for WebSocket upgrade
+          if (data.toLowerCase().includes('upgrade: websocket')) {
+            handled = true;
+            isWs = true;
+            if (handleWebSocketUpgrade(data, socket)) {
+              data = '';
+              return; // Connection stays open for WS
+            }
+          }
 
           const headerSection = data.substring(0, headerEnd);
           const contentLengthMatch = headerSection.match(/content-length:\s*(\d+)/i);
@@ -730,18 +886,16 @@ export function startRelay(port: number = 8735): Promise<string> {
           const bodyStart = headerEnd + 4;
           const bodyReceived = data.length - bodyStart;
 
-          if (bodyReceived < contentLength) return; // Still waiting for body
+          if (bodyReceived < contentLength) return;
 
           handled = true;
 
-          // Full request received — handle it
           const req = parseHttpRequest(data);
           data = '';
 
           const response = req ? handleRequest(req) : httpResponse(400, 'Bad Request', { error: 'Bad request' });
 
           try {
-            // Use end() to write + close gracefully (flush before close)
             socket.end(response);
           } catch {
             try { socket.destroy(); } catch {}
@@ -749,12 +903,12 @@ export function startRelay(port: number = 8735): Promise<string> {
         });
 
         socket.on('error', () => {
-          // Client disconnected — ignore, don't crash server
+          wsClients.delete(socket);
         });
 
-        // Safety: close socket after 30s if still open
+        // Safety: close HTTP sockets after 30s (not WS)
         setTimeout(() => {
-          try { socket.destroy(); } catch {}
+          if (!isWs) { try { socket.destroy(); } catch {} }
         }, 30000);
       });
 
@@ -779,6 +933,12 @@ export function startRelay(port: number = 8735): Promise<string> {
 }
 
 export function stopRelay(): void {
+  // Close all WebSocket clients
+  for (const ws of wsClients) {
+    try { ws.destroy(); } catch {}
+  }
+  wsClients.clear();
+
   if (server) {
     try {
       server.close();

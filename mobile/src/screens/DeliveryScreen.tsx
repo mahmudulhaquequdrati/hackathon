@@ -135,23 +135,23 @@ export default function DeliveryScreen({ onBack }: { onBack: () => void }) {
     })();
   }, []);
 
-  // WebSocket listener — silently refresh delivery list in background
+  // WebSocket listener — works with both real backend and phone relay hub
   const wsRef = useRef<WebSocket | null>(null);
   const lastRefreshRef = useRef(0);
 
   useEffect(() => {
-    const apiUrl = process.env.EXPO_PUBLIC_API_URL || '';
+    const apiUrl = api.getBaseUrl() || '';
     const wsUrl = apiUrl.replace(/^http/, 'ws').replace(/\/api\/v1$/, '');
     if (!wsUrl) return;
 
+    let ws: WebSocket | null = null;
     try {
-      const ws = new WebSocket(wsUrl);
+      ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
           if (['POD_CONFIRMED', 'DELIVERY_CREATED', 'DELIVERY_STATUS_CHANGED'].includes(msg.type)) {
-            // Debounce: skip if we refreshed within the last 2 seconds
             const now = Date.now();
             if (now - lastRefreshRef.current > 2000) {
               lastRefreshRef.current = now;
@@ -160,9 +160,13 @@ export default function DeliveryScreen({ onBack }: { onBack: () => void }) {
           }
         } catch {}
       };
+      ws.onerror = () => {}; // Silently fail if WS not available
     } catch {}
 
-    return () => { wsRef.current?.close(); };
+    return () => {
+      try { ws?.close(); } catch {}
+      wsRef.current = null;
+    };
   }, [fetchDeliveries]);
 
   const onRefresh = async () => {

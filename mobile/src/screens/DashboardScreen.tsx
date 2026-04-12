@@ -1,20 +1,20 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  Alert,
-  RefreshControl,
-  Clipboard,
+    Alert,
+    Clipboard,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuthStore } from '../lib/useAuthStore';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { useSupplyStore, type Supply } from '../lib/useSupplyStore';
 import { api } from '../lib/api';
+import { useAuthStore } from '../lib/useAuthStore';
+import { useSupplyStore } from '../lib/useSupplyStore';
 import ConflictModal from './ConflictModal';
 
 export default function DashboardScreen({ navigation }: any) {
@@ -356,7 +356,7 @@ function OfflineCard({ navigation }: { navigation: any }) {
         • Connect to another phone's Hub
       </Text>
 
-      {fallbackUrl && fallbackUrl !== api.getBaseUrl() && (
+      {/* {fallbackUrl && fallbackUrl !== api.getBaseUrl() && (
         <TouchableOpacity
           style={{ backgroundColor: '#065f46', borderRadius: 10, padding: 12, alignItems: 'center', marginTop: 10 }}
           onPress={switchToFallback}
@@ -365,7 +365,7 @@ function OfflineCard({ navigation }: { navigation: any }) {
             Switch to last Hub: {fallbackUrl}
           </Text>
         </TouchableOpacity>
-      )}
+      )} */}
 
       <TouchableOpacity
         style={{ backgroundColor: '#713f12', borderRadius: 10, padding: 12, alignItems: 'center', marginTop: 8 }}

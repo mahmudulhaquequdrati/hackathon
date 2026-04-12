@@ -256,6 +256,105 @@ export const useSupplyStore = create<SupplyState>((set, get) => ({
         pendingConflicts: allPendingConflicts.filter((c) => !c.autoResolved),
       });
       log('info', `Sync complete. Pulled ${pullResult.data.count} items, ${allConflicts.length} conflicts (${allPendingConflicts.filter(c => !c.autoResolved).length} need resolution)`);
+
+      // ── Sync ALL other data types ──────────────────────────
+
+      // Deliveries
+      try {
+        const delRes = await api.get<{ data: { deliveries: any[] } }>('/delivery/');
+        const deliveries = delRes.data.deliveries || [];
+        for (const d of deliveries) {
+          await db.upsertLocalDelivery(d);
+        }
+        log('info', `Synced ${deliveries.length} deliveries`);
+
+        // PoD receipts for each delivery
+        for (const d of deliveries) {
+          try {
+            const chainRes = await api.get<{ data: { receipts: any[] } }>(`/delivery/${d.id}/chain`);
+            const receipts = chainRes.data.receipts || [];
+            for (const r of receipts) {
+              await db.upsertPodReceipt(r);
+            }
+          } catch { /* some deliveries may have no chain */ }
+        }
+      } catch {
+        log('info', 'Delivery sync skipped (not available)');
+      }
+
+      // Mesh peers
+      try {
+        const peersRes = await api.get<{ data: any[] }>('/mesh/peers');
+        const peers = peersRes.data || [];
+        for (const p of peers) {
+          await db.cachePeer(p.deviceId, p.boxPublicKey || '', p.name || null, p.role || null);
+        }
+        log('info', `Synced ${peers.length} mesh peers`);
+      } catch {
+        log('info', 'Peer sync skipped (not available)');
+      }
+
+      // Mesh inbox
+      try {
+        const inboxRes = await api.get<{ data: { messages: any[]; count: number } }>(`/mesh/inbox/${deviceId}`);
+        const msgs = inboxRes.data.messages || [];
+        for (const m of msgs) {
+          const exists = await db.meshMessageExists(m.id);
+          if (!exists) {
+            await db.insertMeshMessage({
+              id: m.id,
+              source_device_id: m.source_device_id,
+              target_device_id: m.target_device_id,
+              relay_device_id: m.relay_device_id || null,
+              payload: m.payload,
+              nonce: m.nonce || null,
+              sender_box_pub_key: m.sender_box_pub_key || null,
+              ttl: m.ttl ?? 3,
+              hop_count: m.hop_count ?? 0,
+              status: 'delivered',
+              created_at: m.created_at || new Date().toISOString(),
+              expires_at: m.expires_at || null,
+            });
+          }
+        }
+        // Ack received messages
+        if (msgs.length > 0) {
+          try { await api.post('/mesh/ack', { messageIds: msgs.map((m: any) => m.id) }); } catch {}
+        }
+        log('info', `Synced ${msgs.length} mesh messages`);
+      } catch {
+        log('info', 'Mesh inbox sync skipped (not available)');
+      }
+
+      // Route graph (nodes + edges)
+      try {
+        const database = await db.getDatabase();
+        const graphRes = await api.get<{ data: { nodes: any[]; edges: any[] } }>('/routes/graph');
+        const nodes = graphRes.data.nodes || [];
+        const edges = graphRes.data.edges || [];
+        if (nodes.length > 0) {
+          await database.execAsync('DELETE FROM cached_nodes');
+          for (const n of nodes) {
+            await database.runAsync(
+              'INSERT OR REPLACE INTO cached_nodes (id, name, type, lat, lng, status) VALUES (?, ?, ?, ?, ?, ?)',
+              [n.id, n.name, n.type, n.lat ?? null, n.lng ?? null, n.status ?? 'active'],
+            );
+          }
+        }
+        if (edges.length > 0) {
+          await database.execAsync('DELETE FROM cached_edges');
+          for (const e of edges) {
+            await database.runAsync(
+              'INSERT OR REPLACE INTO cached_edges (id, source_id, target_id, type, distance, travel_time, risk_score, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+              [e.id, e.source_id, e.target_id, e.type, e.distance, e.travel_time, e.risk_score, e.status],
+            );
+          }
+        }
+        log('info', `Synced ${nodes.length} nodes, ${edges.length} edges`);
+      } catch {
+        log('info', 'Graph sync skipped (not available)');
+      }
+
     } catch (err) {
       set({ syncStatus: 'error' });
       log('error', 'Sync failed', (err as Error).message);
