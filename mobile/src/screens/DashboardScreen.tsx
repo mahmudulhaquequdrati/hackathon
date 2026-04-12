@@ -288,6 +288,11 @@ export default function DashboardScreen({ navigation }: any) {
           <Text style={s.meshBtnText}>Mesh Network</Text>
         </TouchableOpacity>
 
+        {/* Route Map */}
+        <TouchableOpacity style={s.routeBtn} onPress={() => navigation.replace('routes')}>
+          <Text style={s.routeBtnText}>Route Map</Text>
+        </TouchableOpacity>
+
         {/* Logout */}
         <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
           <Text style={s.logoutText}>Logout</Text>
@@ -408,6 +413,9 @@ const s = StyleSheet.create({
 
   meshBtn: { backgroundColor: '#065f46', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
   meshBtnText: { color: '#6ee7b7', fontSize: 14, fontWeight: '600' },
+
+  routeBtn: { backgroundColor: '#1e3a5f', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
+  routeBtnText: { color: '#93c5fd', fontSize: 14, fontWeight: '600' },
 
   logoutBtn: { backgroundColor: '#7f1d1d', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
   logoutText: { color: '#fca5a5', fontSize: 14, fontWeight: '600' },

@@ -7,10 +7,11 @@ import LoginScreen from './src/screens/LoginScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import P2PSyncScreen from './src/screens/P2PSyncScreen';
 import MeshScreen from './src/screens/MeshScreen';
+import RouteMapScreen from './src/screens/RouteMapScreen';
 import { useAuthStore } from './src/lib/useAuthStore';
 import { log } from './src/lib/debug';
 
-type Screen = 'login' | 'dashboard' | 'p2p' | 'mesh';
+type Screen = 'login' | 'dashboard' | 'p2p' | 'mesh' | 'routes';
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -49,7 +50,8 @@ export default function App() {
       if (s === 'Main' || s === 'dashboard') setScreen('dashboard');
       else if (s === 'Login' || s === 'login') setScreen('login');
       else if (s === 'p2p') setScreen('p2p');
-      else if (s === 'mesh') setScreen('mesh');
+      else if (s === 'mesh') setScreen('mesh')
+      else if (s === 'routes') setScreen('routes');
     },
   };
 
@@ -60,6 +62,7 @@ export default function App() {
       {screen === 'dashboard' && <DashboardScreen navigation={nav} />}
       {screen === 'p2p' && <P2PSyncScreen onBack={() => setScreen('dashboard')} />}
       {screen === 'mesh' && <MeshScreen onBack={() => setScreen('dashboard')} />}
+      {screen === 'routes' && <RouteMapScreen onBack={() => setScreen('dashboard')} />}
     </SafeAreaProvider>
   );
 }
