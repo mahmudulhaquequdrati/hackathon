@@ -95,6 +95,22 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
       used_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS local_triage_decisions (
+      id TEXT PRIMARY KEY,
+      delivery_id TEXT NOT NULL,
+      decision_type TEXT NOT NULL,
+      priority TEXT NOT NULL,
+      old_eta TEXT,
+      new_eta TEXT,
+      sla_deadline TEXT,
+      slack_minutes REAL,
+      dropped_cargo TEXT,
+      waypoint_id TEXT,
+      rationale TEXT,
+      decided_by TEXT DEFAULT 'system',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS pod_receipts (
       id TEXT PRIMARY KEY,
       delivery_id TEXT NOT NULL,

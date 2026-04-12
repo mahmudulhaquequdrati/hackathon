@@ -63,7 +63,7 @@ export default function DashboardScreen({ navigation }: any) {
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (['sync:push', 'DELIVERY_CREATED', 'DELIVERY_STATUS_CHANGED', 'POD_CONFIRMED'].includes(msg.type)) {
+          if (['sync:push', 'DELIVERY_CREATED', 'DELIVERY_STATUS_CHANGED', 'POD_CONFIRMED', 'TRIAGE_EVALUATED', 'PREEMPTION_EXECUTED'].includes(msg.type)) {
             loadSupplies();
           }
         } catch {}
@@ -332,6 +332,11 @@ export default function DashboardScreen({ navigation }: any) {
           <Text style={s.deliveryBtnText}>Deliveries & PoD</Text>
         </TouchableOpacity>
 
+        {/* M6: Triage Engine */}
+        <TouchableOpacity style={s.triageBtn} onPress={() => navigation.replace('triage')}>
+          <Text style={s.triageBtnText}>Triage Engine</Text>
+        </TouchableOpacity>
+
         {/* Logout */}
         <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
           <Text style={s.logoutText}>Logout</Text>
@@ -507,6 +512,9 @@ const s = StyleSheet.create({
 
   deliveryBtn: { backgroundColor: '#78350f', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
   deliveryBtnText: { color: '#fbbf24', fontSize: 14, fontWeight: '600' },
+
+  triageBtn: { backgroundColor: '#7f1d1d', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
+  triageBtnText: { color: '#fca5a5', fontSize: 14, fontWeight: '600' },
 
   logoutBtn: { backgroundColor: '#7f1d1d', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
   logoutText: { color: '#fca5a5', fontSize: 14, fontWeight: '600' },

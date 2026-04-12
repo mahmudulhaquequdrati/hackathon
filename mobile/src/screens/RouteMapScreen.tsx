@@ -194,18 +194,24 @@ function updateGraph(nodes, edges) {
     var isFailed = e.status==='washed_out'||e.status==='closed';
     var line = L.polyline([[src.lat,src.lng],[tgt.lat,tgt.lng]],{
       color: isFailed ? '#ef4444' : (edgeColors[e.type]||'#6b7280'),
-      weight: isFailed ? 4 : 3,
+      weight: isFailed ? 6 : 5,
       dashArray: isFailed ? '10,6' : null,
       opacity: isFailed ? 0.9 : 0.7,
+    }).addTo(edgeLayer);
+    // Invisible fat line for easier touch on mobile
+    var hitLine = L.polyline([[src.lat,src.lng],[tgt.lat,tgt.lng]],{
+      color:'transparent', weight:25, opacity:0,
     }).addTo(edgeLayer);
     // Midpoint label
     var mid = [(src.lat+tgt.lat)/2,(src.lng+tgt.lng)/2];
     L.marker(mid,{icon:L.divIcon({className:'node-label',
       html:'<span style="color:'+(isFailed?'#ef4444':'#ccc')+'">'+e.type+' '+e.travel_time+'m</span>',
       iconSize:[80,16],iconAnchor:[40,8]})}).addTo(edgeLayer);
-    line.on('click',function(){
+    function tapEdge(){
       window.ReactNativeWebView.postMessage(JSON.stringify({type:'edge_tap',edge:e}));
-    });
+    }
+    line.on('click',tapEdge);
+    hitLine.on('click',tapEdge);
   });
 
   // Draw nodes

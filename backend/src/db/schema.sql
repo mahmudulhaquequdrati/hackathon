@@ -138,3 +138,20 @@ CREATE TABLE IF NOT EXISTS mesh_node_state (
   last_heartbeat TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
+
+-- Triage decisions log (M6)
+CREATE TABLE IF NOT EXISTS triage_decisions (
+  id TEXT PRIMARY KEY,
+  delivery_id TEXT REFERENCES deliveries(id),
+  decision_type TEXT NOT NULL,  -- 'preempt' | 'escalate' | 'hold'
+  priority TEXT NOT NULL,
+  old_eta TEXT,
+  new_eta TEXT,
+  sla_deadline TEXT,
+  slack_minutes REAL,
+  dropped_cargo TEXT,           -- JSON array of supply IDs
+  waypoint_id TEXT REFERENCES nodes(id),
+  rationale TEXT,
+  decided_by TEXT DEFAULT 'system',
+  created_at TEXT DEFAULT (datetime('now'))
+);

@@ -6,7 +6,7 @@ export type NodeStatus = 'active' | 'damaged' | 'offline';
 export type EdgeType = 'road' | 'waterway' | 'airway';
 export type EdgeStatus = 'open' | 'degraded' | 'closed' | 'washed_out';
 export type VehicleType = 'truck' | 'boat' | 'drone';
-export type DeliveryStatus = 'pending' | 'in_transit' | 'delivered' | 'failed';
+export type DeliveryStatus = 'pending' | 'in_transit' | 'delivered' | 'failed' | 'preempted';
 export type SupplyCategory = 'medical' | 'food' | 'water' | 'equipment' | 'shelter';
 export type SyncStatus = 'offline' | 'syncing' | 'synced' | 'conflict';
 
@@ -176,4 +176,47 @@ export interface TriageEntry {
   slaDeadline: string;
   createdAt: string;
   status: 'pending' | 'in_progress' | 'resolved';
+}
+
+// M6: SLA Configuration
+export interface SlaConfig {
+  tier: string;
+  label: string;
+  sla_hours: number;
+  sla_minutes: number;
+  examples: string;
+}
+
+// M6: Triage Evaluation Result
+export interface TriageEvaluation {
+  delivery_id: string;
+  priority: Priority;
+  supply_name: string;
+  source_node_id: string;
+  target_node_id: string;
+  vehicle_type: string;
+  sla_deadline: string;
+  current_eta: string;
+  slack_minutes: number;
+  status: 'ok' | 'warning' | 'breach';
+  travel_time_min: number;
+  preemption_eligible: boolean;
+}
+
+// M6: Preemption Decision
+export interface PreemptionDecision {
+  id: string;
+  delivery_id: string;
+  decision_type: string;
+  priority: Priority;
+  supply_name: string;
+  old_eta: string;
+  new_eta: string;
+  sla_deadline: string;
+  slack_minutes: number;
+  dropped_cargo: string[];
+  waypoint: { id: string; name: string; lat: number; lng: number };
+  rationale: string;
+  decided_by: string;
+  created_at: string;
 }

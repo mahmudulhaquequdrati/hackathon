@@ -5,7 +5,9 @@ const path = require('path');
 
 const db = getDb();
 const tables = [
+  'triage_decisions',
   'mesh_node_state',
+  'used_nonces',
   'mesh_messages',
   'pod_receipts',
   'sync_state',

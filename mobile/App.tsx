@@ -10,10 +10,11 @@ import MeshScreen from './src/screens/MeshScreen';
 import QRPairScreen from './src/screens/QRPairScreen';
 import RouteMapScreen from './src/screens/RouteMapScreen';
 import DeliveryScreen from './src/screens/DeliveryScreen';
+import TriageScreen from './src/screens/TriageScreen';
 import { useAuthStore } from './src/lib/useAuthStore';
 import { log } from './src/lib/debug';
 
-type Screen = 'login' | 'dashboard' | 'p2p' | 'mesh' | 'qr-pair' | 'routes' | 'delivery';
+type Screen = 'login' | 'dashboard' | 'p2p' | 'mesh' | 'qr-pair' | 'routes' | 'delivery' | 'triage';
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -56,6 +57,7 @@ export default function App() {
       else if (s === 'qr-pair') setScreen('qr-pair')
       else if (s === 'routes') setScreen('routes')
       else if (s === 'delivery') setScreen('delivery');
+      else if (s === 'triage') setScreen('triage');
     },
   };
 
@@ -69,6 +71,7 @@ export default function App() {
       {screen === 'qr-pair' && <QRPairScreen onBack={() => setScreen('dashboard')} />}
       {screen === 'routes' && <RouteMapScreen onBack={() => setScreen('dashboard')} />}
       {screen === 'delivery' && <DeliveryScreen onBack={() => setScreen('dashboard')} />}
+      {screen === 'triage' && <TriageScreen onBack={() => setScreen('dashboard')} />}
     </SafeAreaProvider>
   );
 }

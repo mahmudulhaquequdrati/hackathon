@@ -208,13 +208,35 @@ function updateEdgeStatus(edgeId, newStatus, broadcast) {
       db.prepare('UPDATE deliveries SET route_data = ?, updated_at = datetime(\'now\') WHERE id = ?')
         .run(JSON.stringify(newRoute), delivery.id);
 
-      affected.push({ delivery_id: delivery.id, status: 'rerouted', new_route: newRoute });
+      affected.push({ delivery_id: delivery.id, status: 'rerouted', new_route: newRoute, old_route: routeData });
 
       if (broadcast) {
         broadcast('ROUTE_RECALCULATED', { delivery_id: delivery.id, route: newRoute });
       }
     } catch (err) {
       affected.push({ delivery_id: delivery.id, status: 'no_route', error: err.message });
+    }
+  }
+
+  // M6: Triage — evaluate SLA breaches when routes are rerouted with 30%+ slowdown
+  const triageService = require('./triage-service');
+  for (const item of affected) {
+    if (item.status === 'rerouted' && item.new_route && item.old_route) {
+      const slowdown = triageService.checkRouteSlowdown(item.old_route, item.new_route);
+      if (slowdown.slowed) {
+        const evalResult = triageService.evaluateDeliveries(broadcast);
+        // Auto-preempt breached P0/P1 deliveries
+        const breached = (evalResult.evaluations || []).filter(
+          e => e.status === 'breach' && (e.priority === 'P0' || e.priority === 'P1')
+        );
+        for (const b of breached) {
+          try {
+            triageService.executePreemption(b.delivery_id, broadcast);
+          } catch {
+            // Preemption is best-effort
+          }
+        }
+      }
     }
   }
 

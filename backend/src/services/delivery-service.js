@@ -15,17 +15,21 @@ function createDelivery({ supplyId, sourceNodeId, targetNodeId, vehicleType, pri
 
   // Compute route via M4
   let routeData = null;
+  let eta = null;
   try {
     const route = routeService.findPath(sourceNodeId, targetNodeId, vehicleType);
     routeData = JSON.stringify(route);
+    // M6: Compute initial ETA
+    const triageService = require('./triage-service');
+    eta = triageService.computeEta(route, new Date().toISOString());
   } catch (err) {
     // Route computation is best-effort; delivery can exist without a pre-computed route
   }
 
   db.prepare(`
-    INSERT INTO deliveries (id, supply_id, source_node_id, target_node_id, vehicle_type, priority, driver_id, route_data, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-  `).run(id, supplyId || null, sourceNodeId, targetNodeId, vehicleType || 'truck', priority || 'P2', driverId || null, routeData);
+    INSERT INTO deliveries (id, supply_id, source_node_id, target_node_id, vehicle_type, priority, driver_id, route_data, eta, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+  `).run(id, supplyId || null, sourceNodeId, targetNodeId, vehicleType || 'truck', priority || 'P2', driverId || null, routeData, eta);
 
   const delivery = db.prepare('SELECT * FROM deliveries WHERE id = ?').get(id);
 
@@ -59,8 +63,9 @@ function updateDeliveryStatus(id, status) {
   if (!delivery) throw new Error(`Delivery not found: ${id}`);
 
   const validTransitions = {
-    pending: ['in_transit', 'failed'],
-    in_transit: ['delivered', 'failed'],
+    pending: ['in_transit', 'failed', 'preempted'],
+    in_transit: ['delivered', 'failed', 'preempted'],
+    preempted: ['pending', 'in_transit'],
   };
   const allowed = validTransitions[delivery.status];
   if (!allowed || !allowed.includes(status)) {
