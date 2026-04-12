@@ -590,6 +590,7 @@ function handleRequest(req: HttpRequest): string {
         changes: b.changes || [],
       });
       const results = (b.changes || []).map((c: any) => ({ id: c.id, merged: true }));
+      wsBroadcast('sync:push', { deviceId: b.deviceId, count: (b.changes || []).length });
       return ok({ results, serverClock: b.vectorClock });
     }
 

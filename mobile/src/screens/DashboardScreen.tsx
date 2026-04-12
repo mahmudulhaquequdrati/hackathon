@@ -51,6 +51,29 @@ export default function DashboardScreen({ navigation }: any) {
     loadSupplies();
   }, []);
 
+  // WebSocket — auto-refresh when other devices push changes
+  useEffect(() => {
+    const apiUrl = api.getBaseUrl() || '';
+    const wsUrl = apiUrl.replace(/^http/, 'ws').replace(/\/api\/v1$/, '');
+    if (!wsUrl) return;
+
+    let ws: WebSocket | null = null;
+    try {
+      ws = new WebSocket(wsUrl);
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (['sync:push', 'DELIVERY_CREATED', 'DELIVERY_STATUS_CHANGED', 'POD_CONFIRMED'].includes(msg.type)) {
+            loadSupplies();
+          }
+        } catch {}
+      };
+      ws.onerror = () => {};
+    } catch {}
+
+    return () => { try { ws?.close(); } catch {} };
+  }, []);
+
   // Auto-sync when coming back online
   const [wasOffline, setWasOffline] = useState(false);
   useEffect(() => {

@@ -118,7 +118,10 @@ export const useSupplyStore = create<SupplyState>((set, get) => ({
       supplies: [newSupply, ...state.supplies],
       pendingCount: state.pendingCount + 1,
     }));
-    log('info', 'Supply created (offline)', `id=${id}, name=${supply.name}`);
+    log('info', 'Supply created', `id=${id}, name=${supply.name}`);
+
+    // Auto-push to server/hub in background (don't block UI)
+    get().syncWithServer().catch(() => {});
   },
 
   updateSupply: async (id, updates) => {
@@ -167,6 +170,9 @@ export const useSupplyStore = create<SupplyState>((set, get) => ({
       pendingCount: state.pendingCount + (row.synced === 1 ? 1 : 0),
     }));
     log('info', 'Supply updated (CRDT)', `id=${id}, fields=${Object.keys(updates).join(',')}`);
+
+    // Auto-push to server/hub in background
+    get().syncWithServer().catch(() => {});
   },
 
   syncWithServer: async () => {
