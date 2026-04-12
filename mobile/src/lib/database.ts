@@ -129,6 +129,7 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   // Migrations — add columns to existing tables (silently skip if already present)
   try { await db.execAsync('ALTER TABLE mesh_peers ADD COLUMN ip_address TEXT'); } catch {}
   try { await db.execAsync('ALTER TABLE mesh_peers ADD COLUMN port INTEGER'); } catch {}
+  try { await db.execAsync('ALTER TABLE local_deliveries ADD COLUMN route_data TEXT'); } catch {}
 
   return db;
 }
@@ -350,16 +351,17 @@ export async function getMeshNodeState(key: string): Promise<string | null> {
 export async function upsertLocalDelivery(d: {
   id: string; source_node_id: string; target_node_id: string;
   vehicle_type?: string; priority?: string; status?: string;
-  supply_id?: string; driver_id?: string; created_at?: string;
+  supply_id?: string; driver_id?: string; route_data?: string; created_at?: string;
 }): Promise<void> {
   const db = await getDatabase();
   await db.runAsync(
-    `INSERT INTO local_deliveries (id, source_node_id, target_node_id, vehicle_type, priority, status, supply_id, driver_id, synced, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+    `INSERT INTO local_deliveries (id, source_node_id, target_node_id, vehicle_type, priority, status, supply_id, driver_id, route_data, synced, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
      ON CONFLICT(id) DO UPDATE SET
        status = excluded.status,
+       route_data = COALESCE(excluded.route_data, local_deliveries.route_data),
        synced = 1`,
-    [d.id, d.source_node_id, d.target_node_id, d.vehicle_type || 'truck', d.priority || 'P2', d.status || 'pending', d.supply_id || null, d.driver_id || null, d.created_at || new Date().toISOString()],
+    [d.id, d.source_node_id, d.target_node_id, d.vehicle_type || 'truck', d.priority || 'P2', d.status || 'pending', d.supply_id || null, d.driver_id || null, d.route_data || null, d.created_at || new Date().toISOString()],
   );
 }
 
