@@ -9,12 +9,27 @@
     "newArchEnabled": true,
     "plugins": [
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 24,
+            "buildToolsVersion": "36.0.0"
+          }
+        }
+      ],
+      [
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": true,
-          "modes": ["peripheral", "central"]
+          "modes": [
+            "peripheral",
+            "central"
+          ]
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -27,7 +42,10 @@
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "Digital Delta uses Bluetooth to relay emergency supply messages to nearby devices in areas without internet connectivity.",
         "NSBluetoothPeripheralUsageDescription": "Digital Delta needs Bluetooth to act as a mesh relay node for nearby devices.",
-        "UIBackgroundModes": ["bluetooth-central", "bluetooth-peripheral"]
+        "UIBackgroundModes": [
+          "bluetooth-central",
+          "bluetooth-peripheral"
+        ]
       }
     },
     "android": {

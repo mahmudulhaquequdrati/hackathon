@@ -1,0 +1,2 @@
+patchedDependencies:
+  react-native-ble-advertiser: patches/react-native-ble-advertiser.patch
