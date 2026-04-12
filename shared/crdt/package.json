@@ -1,0 +1,7 @@
+{
+  "name": "@digital-delta/crdt",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "private": true,
+  "description": "CRDT primitives for offline-first distributed sync"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "digital-delta",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline-first disaster relief logistics platform",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "cd backend && npnpmpm run dev",
+    "dev:mobile": "cd mobile && pnpm run start",
+    "db:reset": "cd backend && node src/db/reset.js",
+    "db:seed": "cd backend && node src/db/seed.js",
+    "db:setup": "npm run db:reset && pnpm run db:seed"
+  }
+}
