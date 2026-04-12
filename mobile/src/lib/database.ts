@@ -53,6 +53,59 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS cached_nodes (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'camp',
+      lat REAL,
+      lng REAL,
+      status TEXT DEFAULT 'active'
+    );
+
+    CREATE TABLE IF NOT EXISTS cached_edges (
+      id TEXT PRIMARY KEY,
+      source_id TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'road',
+      distance REAL,
+      travel_time REAL,
+      risk_score REAL DEFAULT 0,
+      status TEXT DEFAULT 'open'
+    );
+
+    CREATE TABLE IF NOT EXISTS local_deliveries (
+      id TEXT PRIMARY KEY,
+      source_node_id TEXT NOT NULL,
+      target_node_id TEXT NOT NULL,
+      vehicle_type TEXT NOT NULL DEFAULT 'truck',
+      priority TEXT NOT NULL DEFAULT 'P2',
+      status TEXT NOT NULL DEFAULT 'pending',
+      supply_id TEXT,
+      driver_id TEXT,
+      synced INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS used_nonces (
+      nonce TEXT PRIMARY KEY,
+      delivery_id TEXT,
+      used_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS pod_receipts (
+      id TEXT PRIMARY KEY,
+      delivery_id TEXT NOT NULL,
+      sender_device_id TEXT NOT NULL,
+      receiver_device_id TEXT NOT NULL,
+      sender_signature TEXT NOT NULL,
+      receiver_signature TEXT,
+      payload_hash TEXT NOT NULL,
+      nonce TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      synced INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   return db;

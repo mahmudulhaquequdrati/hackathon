@@ -7,9 +7,9 @@ const authService = require('../services/auth-service');
 // ──────────────────────────────────────────────────
 const PERMISSIONS = {
   commander:   { read: '*', write: '*', execute: '*' },
-  dispatcher:  { read: '*', write: ['supplies', 'deliveries', 'triage'], execute: ['routes'] },
+  dispatcher:  { read: '*', write: ['supplies', 'deliveries', 'triage', 'pod_receipts'], execute: ['routes'] },
   field_agent: { read: ['supplies', 'deliveries', 'nodes'], write: ['deliveries', 'pod_receipts'], execute: [] },
-  drone_pilot: { read: ['routes', 'deliveries', 'nodes'], write: ['deliveries'], execute: ['fleet'] },
+  drone_pilot: { read: ['routes', 'deliveries', 'nodes'], write: ['deliveries', 'pod_receipts'], execute: ['fleet'] },
   observer:    { read: '*', write: [], execute: [] },
 };
 

@@ -120,6 +120,14 @@ CREATE TABLE IF NOT EXISTS mesh_messages (
   expires_at TEXT
 );
 
+-- Used nonces for PoD replay protection (M5.2)
+CREATE TABLE IF NOT EXISTS used_nonces (
+  nonce TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  delivery_id TEXT REFERENCES deliveries(id),
+  used_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Mesh node state for role tracking (M3.2)
 CREATE TABLE IF NOT EXISTS mesh_node_state (
   device_id TEXT PRIMARY KEY,
