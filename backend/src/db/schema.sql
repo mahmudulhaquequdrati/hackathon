@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS users (
   device_id TEXT UNIQUE NOT NULL,
   name TEXT,
   public_key TEXT,
+  box_public_key TEXT, -- x25519 encryption key for mesh E2E (M3.3)
   role TEXT NOT NULL DEFAULT 'field_agent', -- commander, dispatcher, field_agent, drone_pilot, observer
   totp_secret TEXT,
   created_at TEXT DEFAULT (datetime('now')),
@@ -109,10 +110,23 @@ CREATE TABLE IF NOT EXISTS mesh_messages (
   source_device_id TEXT NOT NULL,
   target_device_id TEXT NOT NULL,
   relay_device_id TEXT,
-  payload TEXT NOT NULL, -- encrypted
+  payload TEXT NOT NULL, -- encrypted ciphertext (base64)
+  nonce TEXT, -- nacl.box nonce for decryption (base64)
+  sender_box_pub_key TEXT, -- sender's x25519 box public key (base64)
   ttl INTEGER NOT NULL DEFAULT 3,
   hop_count INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'pending', -- pending, relayed, delivered, expired
   created_at TEXT DEFAULT (datetime('now')),
   expires_at TEXT
+);
+
+-- Mesh node state for role tracking (M3.2)
+CREATE TABLE IF NOT EXISTS mesh_node_state (
+  device_id TEXT PRIMARY KEY,
+  role TEXT NOT NULL DEFAULT 'client', -- 'client' or 'relay'
+  battery_level REAL,
+  signal_strength REAL,
+  connected_peers INTEGER DEFAULT 0,
+  last_heartbeat TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
 );

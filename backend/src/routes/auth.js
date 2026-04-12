@@ -18,16 +18,26 @@ router.get('/keypair', (req, res) => {
 
 // Register a device with its public key + generate TOTP secret
 router.post('/register', (req, res) => {
-  const { deviceId, publicKey, role, name } = req.body;
+  const { deviceId, publicKey, boxPublicKey, role, name } = req.body;
   if (!deviceId || !publicKey) {
     return res.status(400).json({ error: 'deviceId and publicKey are required' });
   }
 
   try {
-    const user = authService.registerDevice(deviceId, publicKey, role, name);
+    authService.registerDevice(deviceId, publicKey, role, name);
+
+    // Store box public key for mesh encryption (M3.3) if provided
+    if (boxPublicKey) {
+      const { getDb } = require('../db/connection');
+      getDb().prepare('UPDATE users SET box_public_key = ? WHERE device_id = ?')
+        .run(boxPublicKey, deviceId);
+    }
 
     // Auto-generate TOTP secret on registration
     const totp = authService.generateTotpSecret(deviceId);
+
+    // Re-fetch user to include box_public_key
+    const user = authService.getUserByDeviceId(deviceId);
 
     res.status(201).json({
       data: {
@@ -42,6 +52,24 @@ router.post('/register', (req, res) => {
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Register/update box public key for mesh encryption (M3.3)
+router.post('/register-box-key', requireAuth, (req, res) => {
+  try {
+    const { boxPublicKey } = req.body;
+    if (!boxPublicKey) {
+      return res.status(400).json({ error: 'boxPublicKey is required' });
+    }
+
+    const { getDb } = require('../db/connection');
+    getDb().prepare('UPDATE users SET box_public_key = ? WHERE device_id = ?')
+      .run(boxPublicKey, req.user.deviceId);
+
+    res.json({ data: { deviceId: req.user.deviceId, boxPublicKey, registered: true } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

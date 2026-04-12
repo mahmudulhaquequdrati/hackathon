@@ -3,6 +3,7 @@ import type { Role } from '../types';
 import { api } from './api';
 import * as storage from './storage';
 import { generateKeypair, exportKeyBase64 } from './crypto';
+import { generateBoxKeypair, exportKeyBase64 as exportBoxKey } from './mesh-crypto';
 import { generateOtp, verifyOtp as verifyOtpLocal, getTimeRemaining } from './totp';
 import { log } from './debug';
 
@@ -29,6 +30,7 @@ interface AuthState {
   verifyOtp: (otp: string) => Promise<void>;
   refreshOtp: () => void;
   logout: () => Promise<void>;
+  resetDevice: () => Promise<void>;
   hasPermission: (resource: string, action: string) => boolean;
 }
 
@@ -99,6 +101,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Store keypair in SecureStore
       await storage.storeKeypair(pubB64, secB64);
 
+      // Generate x25519 box keypair for mesh encryption (M3.3)
+      log('crypto', 'Generating x25519 box keypair for mesh encryption...');
+      const boxPair = generateBoxKeypair();
+      const boxPubB64 = exportBoxKey(boxPair.publicKey);
+      const boxSecB64 = exportBoxKey(boxPair.secretKey);
+      await storage.storeBoxKeypair(boxPubB64, boxSecB64);
+      log('crypto', 'Box keypair generated', `pub=${boxPubB64.substring(0, 16)}...`);
+
       // Register with server
       const response = await api.post<{
         data: {
@@ -108,6 +118,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }>('/auth/register', {
         deviceId,
         publicKey: pubB64,
+        boxPublicKey: boxPubB64,
         role: role || 'field_agent',
         name,
       });
@@ -181,6 +192,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await storage.clearAll();
     api.setToken(null);
     set({ token: null, user: null, isAuthenticated: false });
+  },
+
+  /** Full device reset — nuke everything for re-registration */
+  resetDevice: async () => {
+    await storage.resetDevice();
+    api.setToken(null);
+    set({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+      error: null,
+      deviceId: '',
+      publicKey: null,
+      secretKey: null,
+      totpSecret: null,
+      currentOtp: null,
+      otpTimeRemaining: 0,
+    });
   },
 
   /** Client-side RBAC permission check */

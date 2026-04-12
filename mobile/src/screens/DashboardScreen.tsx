@@ -17,7 +17,7 @@ import { useSupplyStore, type Supply } from '../lib/useSupplyStore';
 import ConflictModal from './ConflictModal';
 
 export default function DashboardScreen({ navigation }: any) {
-  const { user, logout, token, deviceId } = useAuthStore();
+  const { user, logout, resetDevice, token, deviceId } = useAuthStore();
   const isOnline = useOnlineStatus();
   const {
     supplies,
@@ -100,6 +100,24 @@ export default function DashboardScreen({ navigation }: any) {
   const handleLogout = async () => {
     await logout();
     navigation.replace('Login');
+  };
+
+  const handleResetDevice = () => {
+    Alert.alert(
+      'Reset Device',
+      'This will delete ALL device data (keys, TOTP, identity). You will need to re-register as a new device. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            await resetDevice();
+            navigation.replace('Login');
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -265,9 +283,19 @@ export default function DashboardScreen({ navigation }: any) {
           <Text style={s.p2pBtnText}>P2P Device Sync</Text>
         </TouchableOpacity>
 
+        {/* Mesh Network */}
+        <TouchableOpacity style={s.meshBtn} onPress={() => navigation.replace('mesh')}>
+          <Text style={s.meshBtnText}>Mesh Network</Text>
+        </TouchableOpacity>
+
         {/* Logout */}
         <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
           <Text style={s.logoutText}>Logout</Text>
+        </TouchableOpacity>
+
+        {/* Reset Device */}
+        <TouchableOpacity style={s.resetBtn} onPress={handleResetDevice}>
+          <Text style={s.resetText}>Reset Device (Re-register)</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -378,6 +406,12 @@ const s = StyleSheet.create({
   p2pBtn: { backgroundColor: '#4c1d95', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 16 },
   p2pBtnText: { color: '#c4b5fd', fontSize: 14, fontWeight: '600' },
 
+  meshBtn: { backgroundColor: '#065f46', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
+  meshBtnText: { color: '#6ee7b7', fontSize: 14, fontWeight: '600' },
+
   logoutBtn: { backgroundColor: '#7f1d1d', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
   logoutText: { color: '#fca5a5', fontSize: 14, fontWeight: '600' },
+
+  resetBtn: { backgroundColor: '#451a03', borderWidth: 1, borderColor: '#92400e', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8, marginBottom: 30 },
+  resetText: { color: '#fbbf24', fontSize: 13, fontWeight: '600' },
 });

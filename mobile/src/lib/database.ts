@@ -25,6 +25,34 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS mesh_messages (
+      id TEXT PRIMARY KEY,
+      source_device_id TEXT NOT NULL,
+      target_device_id TEXT NOT NULL,
+      relay_device_id TEXT,
+      payload TEXT NOT NULL,
+      nonce TEXT,
+      sender_box_pub_key TEXT,
+      ttl INTEGER NOT NULL DEFAULT 3,
+      hop_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT DEFAULT (datetime('now')),
+      expires_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS mesh_peers (
+      device_id TEXT PRIMARY KEY,
+      name TEXT,
+      role TEXT,
+      box_public_key TEXT NOT NULL,
+      cached_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS mesh_node_state (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
 
   return db;
@@ -104,6 +132,131 @@ export async function markSynced(ids: string[]): Promise<void> {
     `UPDATE supplies SET synced = 1 WHERE id IN (${placeholders})`,
     ids,
   );
+}
+
+// --- Mesh messages (M3) ---
+
+export interface MeshMessageRow {
+  id: string;
+  source_device_id: string;
+  target_device_id: string;
+  relay_device_id: string | null;
+  payload: string;
+  nonce: string | null;
+  sender_box_pub_key: string | null;
+  ttl: number;
+  hop_count: number;
+  status: string;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export async function insertMeshMessage(msg: MeshMessageRow): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT OR IGNORE INTO mesh_messages (id, source_device_id, target_device_id, relay_device_id, payload, nonce, sender_box_pub_key, ttl, hop_count, status, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [msg.id, msg.source_device_id, msg.target_device_id, msg.relay_device_id, msg.payload, msg.nonce, msg.sender_box_pub_key, msg.ttl, msg.hop_count, msg.status, msg.expires_at],
+  );
+}
+
+export async function getPendingOutbox(deviceId: string): Promise<MeshMessageRow[]> {
+  const db = await getDatabase();
+  return db.getAllAsync<MeshMessageRow>(
+    "SELECT * FROM mesh_messages WHERE source_device_id = ? AND status = 'pending' ORDER BY created_at ASC",
+    [deviceId],
+  );
+}
+
+export async function getPendingInbox(deviceId: string): Promise<MeshMessageRow[]> {
+  const db = await getDatabase();
+  return db.getAllAsync<MeshMessageRow>(
+    "SELECT * FROM mesh_messages WHERE target_device_id = ? AND status IN ('pending', 'delivered') ORDER BY created_at ASC",
+    [deviceId],
+  );
+}
+
+export async function getRelayableMessages(excludeDeviceId: string): Promise<MeshMessageRow[]> {
+  const db = await getDatabase();
+  return db.getAllAsync<MeshMessageRow>(
+    "SELECT * FROM mesh_messages WHERE status = 'pending' AND target_device_id != ? AND ttl > 0 AND (expires_at IS NULL OR expires_at > datetime('now'))",
+    [excludeDeviceId],
+  );
+}
+
+export async function updateMeshMessageStatus(id: string, status: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync('UPDATE mesh_messages SET status = ? WHERE id = ?', [status, id]);
+}
+
+export async function meshMessageExists(id: string): Promise<boolean> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ id: string }>('SELECT id FROM mesh_messages WHERE id = ?', [id]);
+  return !!row;
+}
+
+export async function expireOldMeshMessages(): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync("UPDATE mesh_messages SET status = 'expired' WHERE status = 'pending' AND expires_at < datetime('now')");
+}
+
+export async function getAllMeshMessages(deviceId: string): Promise<MeshMessageRow[]> {
+  const db = await getDatabase();
+  return db.getAllAsync<MeshMessageRow>(
+    'SELECT * FROM mesh_messages WHERE source_device_id = ? OR target_device_id = ? ORDER BY created_at DESC',
+    [deviceId, deviceId],
+  );
+}
+
+// --- Mesh peers cache (M3) ---
+
+export interface MeshPeerRow {
+  device_id: string;
+  name: string | null;
+  role: string | null;
+  box_public_key: string;
+  cached_at: string;
+}
+
+export async function cachePeer(deviceId: string, boxPubKey: string, name: string | null, role: string | null): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT INTO mesh_peers (device_id, name, role, box_public_key, cached_at)
+     VALUES (?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(device_id) DO UPDATE SET
+       name = excluded.name,
+       role = excluded.role,
+       box_public_key = excluded.box_public_key,
+       cached_at = excluded.cached_at`,
+    [deviceId, name, role, boxPubKey],
+  );
+}
+
+export async function getCachedPeers(): Promise<MeshPeerRow[]> {
+  const db = await getDatabase();
+  return db.getAllAsync<MeshPeerRow>('SELECT * FROM mesh_peers ORDER BY name ASC');
+}
+
+export async function getCachedPeer(deviceId: string): Promise<MeshPeerRow | null> {
+  const db = await getDatabase();
+  return db.getFirstAsync<MeshPeerRow>('SELECT * FROM mesh_peers WHERE device_id = ?', [deviceId]);
+}
+
+// --- Mesh node state (M3) ---
+
+export async function saveMeshNodeState(key: string, value: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT INTO mesh_node_state (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value],
+  );
+}
+
+export async function getMeshNodeState(key: string): Promise<string | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM mesh_node_state WHERE key = ?', [key]);
+  return row ? row.value : null;
 }
 
 // --- Sync state (vector clock persistence) ---

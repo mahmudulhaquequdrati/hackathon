@@ -108,17 +108,39 @@ export interface PodReceipt {
   createdAt: string;
 }
 
+// Mesh network types (M3)
+export type MeshNodeRole = 'client' | 'relay';
+export type MeshMessageStatus = 'pending' | 'relayed' | 'delivered' | 'expired';
+
 export interface MeshMessage {
   id: string;
   sourceDeviceId: string;
   targetDeviceId: string;
   relayDeviceId: string | null;
-  payload: string;
+  payload: string;        // encrypted ciphertext (base64)
+  nonce: string;          // nacl.box nonce (base64)
+  senderBoxPubKey: string; // sender's x25519 box public key (base64)
   ttl: number;
   hopCount: number;
-  status: 'pending' | 'relayed' | 'delivered' | 'expired';
+  status: MeshMessageStatus;
   createdAt: string;
   expiresAt: string | null;
+}
+
+export interface MeshNodeState {
+  deviceId: string;
+  role: MeshNodeRole;
+  batteryLevel: number;
+  signalStrength: number;
+  connectedPeers: number;
+  lastHeartbeat: string;
+}
+
+export interface MeshPeer {
+  deviceId: string;
+  name: string | null;
+  boxPublicKey: string;
+  role: Role;
 }
 
 // Vector clock type

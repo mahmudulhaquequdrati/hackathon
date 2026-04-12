@@ -4,6 +4,8 @@ const KEYS = {
   DEVICE_ID: 'digital_delta_device_id',
   PUBLIC_KEY: 'digital_delta_public_key',
   SECRET_KEY: 'digital_delta_secret_key',
+  BOX_PUBLIC_KEY: 'digital_delta_box_public_key',
+  BOX_SECRET_KEY: 'digital_delta_box_secret_key',
   TOTP_SECRET: 'digital_delta_totp_secret',
   JWT_TOKEN: 'digital_delta_jwt_token',
   USER_DATA: 'digital_delta_user_data',
@@ -29,6 +31,20 @@ export async function storeKeypair(publicKey: string, secretKey: string): Promis
 export async function loadKeypair(): Promise<{ publicKey: string; secretKey: string } | null> {
   const publicKey = await SecureStore.getItemAsync(KEYS.PUBLIC_KEY);
   const secretKey = await SecureStore.getItemAsync(KEYS.SECRET_KEY);
+  if (publicKey && secretKey) return { publicKey, secretKey };
+  return null;
+}
+
+/** Store x25519 box keypair for mesh encryption (M3.3) */
+export async function storeBoxKeypair(publicKey: string, secretKey: string): Promise<void> {
+  await SecureStore.setItemAsync(KEYS.BOX_PUBLIC_KEY, publicKey);
+  await SecureStore.setItemAsync(KEYS.BOX_SECRET_KEY, secretKey);
+}
+
+/** Load box keypair from SecureStore */
+export async function loadBoxKeypair(): Promise<{ publicKey: string; secretKey: string } | null> {
+  const publicKey = await SecureStore.getItemAsync(KEYS.BOX_PUBLIC_KEY);
+  const secretKey = await SecureStore.getItemAsync(KEYS.BOX_SECRET_KEY);
   if (publicKey && secretKey) return { publicKey, secretKey };
   return null;
 }
@@ -65,11 +81,17 @@ export async function loadUserData<T>(): Promise<T | null> {
   return null;
 }
 
-/** Clear all stored data (logout) */
+/** Clear session data (logout) — keeps keys and TOTP */
 export async function clearAll(): Promise<void> {
   await SecureStore.deleteItemAsync(KEYS.JWT_TOKEN);
   await SecureStore.deleteItemAsync(KEYS.USER_DATA);
-  // Keep device ID, keypair, and TOTP secret — they persist across sessions
+}
+
+/** Nuke EVERYTHING — full device reset for re-registration */
+export async function resetDevice(): Promise<void> {
+  for (const key of Object.values(KEYS)) {
+    await SecureStore.deleteItemAsync(key);
+  }
 }
 
 /** Simple UUID v4 generator (no external dep needed) */

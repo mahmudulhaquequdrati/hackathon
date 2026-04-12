@@ -1,19 +1,34 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Digital Delta",
+    "slug": "digital-delta",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "plugins": [
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": ["peripheral", "central"]
+        }
+      ]
+    ],
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.digitaldelta.mesh",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Digital Delta uses Bluetooth to relay emergency supply messages to nearby devices in areas without internet connectivity.",
+        "NSBluetoothPeripheralUsageDescription": "Digital Delta needs Bluetooth to act as a mesh relay node for nearby devices.",
+        "UIBackgroundModes": ["bluetooth-central", "bluetooth-peripheral"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +36,16 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.digitaldelta.mesh",
+      "permissions": [
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_ADVERTISE",
+        "BLUETOOTH_CONNECT",
+        "ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

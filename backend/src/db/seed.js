@@ -53,16 +53,16 @@ console.log(`Seeded ${edges.length} edges.`);
 
 // ── Users ──────────────────────────────────────────────────────────────────
 const users = [
-  { id: uuidv4(), device_id: 'dev-commander-01',  name: 'Col. Rahman',      role: 'commander',    public_key: null, totp_secret: 'JBSWY3DPEHPK3PXP' },
-  { id: uuidv4(), device_id: 'dev-dispatcher-01', name: 'Dispatcher Akter', role: 'dispatcher',   public_key: null, totp_secret: 'JBSWY3DPEHPK3PXQ' },
-  { id: uuidv4(), device_id: 'dev-agent-01',       name: 'Field Agent Hasan',role: 'field_agent',  public_key: null, totp_secret: 'JBSWY3DPEHPK3PXR' },
-  { id: uuidv4(), device_id: 'dev-pilot-01',       name: 'Drone Pilot Mim',  role: 'drone_pilot',  public_key: null, totp_secret: 'JBSWY3DPEHPK3PXS' },
-  { id: uuidv4(), device_id: 'dev-observer-01',    name: 'UN Observer Karim',role: 'observer',     public_key: null, totp_secret: 'JBSWY3DPEHPK3PXT' }
+  { id: uuidv4(), device_id: 'dev-commander-01',  name: 'Col. Rahman',      role: 'commander',    public_key: null, box_public_key: null, totp_secret: 'JBSWY3DPEHPK3PXP' },
+  { id: uuidv4(), device_id: 'dev-dispatcher-01', name: 'Dispatcher Akter', role: 'dispatcher',   public_key: null, box_public_key: null, totp_secret: 'JBSWY3DPEHPK3PXQ' },
+  { id: uuidv4(), device_id: 'dev-agent-01',       name: 'Field Agent Hasan',role: 'field_agent',  public_key: null, box_public_key: null, totp_secret: 'JBSWY3DPEHPK3PXR' },
+  { id: uuidv4(), device_id: 'dev-pilot-01',       name: 'Drone Pilot Mim',  role: 'drone_pilot',  public_key: null, box_public_key: null, totp_secret: 'JBSWY3DPEHPK3PXS' },
+  { id: uuidv4(), device_id: 'dev-observer-01',    name: 'UN Observer Karim',role: 'observer',     public_key: null, box_public_key: null, totp_secret: 'JBSWY3DPEHPK3PXT' }
 ];
 
 const insertUser = db.prepare(`
-  INSERT OR REPLACE INTO users (id, device_id, name, role, public_key, totp_secret)
-  VALUES (@id, @device_id, @name, @role, @public_key, @totp_secret)
+  INSERT OR REPLACE INTO users (id, device_id, name, role, public_key, box_public_key, totp_secret)
+  VALUES (@id, @device_id, @name, @role, @public_key, @box_public_key, @totp_secret)
 `);
 
 db.transaction(() => {
