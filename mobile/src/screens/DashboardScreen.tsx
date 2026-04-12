@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../lib/useAuthStore';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useSupplyStore, type Supply } from '../lib/useSupplyStore';
+import { api } from '../lib/api';
 import ConflictModal from './ConflictModal';
 
 export default function DashboardScreen({ navigation }: any) {
@@ -140,6 +141,11 @@ export default function DashboardScreen({ navigation }: any) {
           </View>
         </View>
 
+        {/* Connection Status — show when offline so user knows why */}
+        {!isOnline && (
+          <OfflineCard navigation={navigation} />
+        )}
+
         {/* Identity Card */}
         {user ? (
           <View style={s.card}>
@@ -176,12 +182,12 @@ export default function DashboardScreen({ navigation }: any) {
           )}
 
           <TouchableOpacity
-            style={[s.syncBtn, !isOnline && s.syncBtnDisabled]}
+            style={[s.syncBtn, syncStatus === 'syncing' && s.syncBtnDisabled]}
             onPress={syncWithServer}
-            disabled={!isOnline || syncStatus === 'syncing'}
+            disabled={syncStatus === 'syncing'}
           >
             <Text style={s.syncBtnText}>
-              {syncStatus === 'syncing' ? 'Syncing...' : 'Sync Now'}
+              {syncStatus === 'syncing' ? 'Syncing...' : isOnline ? 'Sync Now' : 'Sync Now (try LAN)'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -288,6 +294,11 @@ export default function DashboardScreen({ navigation }: any) {
           <Text style={s.meshBtnText}>Mesh Network</Text>
         </TouchableOpacity>
 
+        {/* QR Pair / LAN Setup */}
+        <TouchableOpacity style={s.qrPairBtn} onPress={() => navigation.replace('qr-pair')}>
+          <Text style={s.qrPairBtnText}>QR Pair & LAN Setup</Text>
+        </TouchableOpacity>
+
         {/* Route Map */}
         <TouchableOpacity style={s.routeBtn} onPress={() => navigation.replace('routes')}>
           <Text style={s.routeBtnText}>Route Map</Text>
@@ -317,6 +328,52 @@ export default function DashboardScreen({ navigation }: any) {
         onDismiss={dismissConflicts}
       />
     </SafeAreaView>
+  );
+}
+
+function OfflineCard({ navigation }: { navigation: any }) {
+  const [fallbackUrl, setFallbackUrl] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    api.getSavedFallbackUrl().then(setFallbackUrl);
+  }, []);
+
+  const switchToFallback = async () => {
+    if (fallbackUrl) {
+      await api.saveBaseUrl(fallbackUrl);
+      Alert.alert('Switched', `Now connecting to: ${fallbackUrl}`);
+    }
+  };
+
+  return (
+    <View style={[s.card, { borderColor: '#ef4444' }]}>
+      <Text style={s.cardH}>NO SERVER CONNECTION</Text>
+      <Row label="Trying" value={api.getBaseUrl()} color="#ef4444" />
+      <Text style={{ color: '#9ca3af', fontSize: 12, marginTop: 6, lineHeight: 18 }}>
+        Server not reachable. You can:{'\n'}
+        • Start your laptop server (npm start){'\n'}
+        • Start Hub Mode on a phone{'\n'}
+        • Connect to another phone's Hub
+      </Text>
+
+      {fallbackUrl && fallbackUrl !== api.getBaseUrl() && (
+        <TouchableOpacity
+          style={{ backgroundColor: '#065f46', borderRadius: 10, padding: 12, alignItems: 'center', marginTop: 10 }}
+          onPress={switchToFallback}
+        >
+          <Text style={{ color: '#6ee7b7', fontSize: 13, fontWeight: '600' }}>
+            Switch to last Hub: {fallbackUrl}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      <TouchableOpacity
+        style={{ backgroundColor: '#713f12', borderRadius: 10, padding: 12, alignItems: 'center', marginTop: 8 }}
+        onPress={() => navigation.replace('qr-pair')}
+      >
+        <Text style={{ color: '#fbbf24', fontSize: 14, fontWeight: '600' }}>QR Pair & LAN Setup</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -418,6 +475,9 @@ const s = StyleSheet.create({
 
   meshBtn: { backgroundColor: '#065f46', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
   meshBtnText: { color: '#6ee7b7', fontSize: 14, fontWeight: '600' },
+
+  qrPairBtn: { backgroundColor: '#713f12', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
+  qrPairBtnText: { color: '#fbbf24', fontSize: 14, fontWeight: '600' },
 
   routeBtn: { backgroundColor: '#1e3a5f', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
   routeBtnText: { color: '#93c5fd', fontSize: 14, fontWeight: '600' },

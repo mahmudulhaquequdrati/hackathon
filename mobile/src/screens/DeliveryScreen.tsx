@@ -1,20 +1,27 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, RefreshControl, Modal,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import QRCode from 'react-native-qrcode-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useAuthStore } from '../lib/useAuthStore';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+    Alert,
+    Modal,
+    RefreshControl,
+    ScrollView, StyleSheet,
+    Text, TouchableOpacity,
+    View,
+} from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { api } from '../lib/api';
-import {
-  generatePodPayload, verifyPodPayload, countersignPod,
-  markNonceUsed, storePodReceipt,
-  type PodChallenge, type PodReceipt,
-} from '../lib/pod';
 import { importKeyBase64 } from '../lib/crypto';
 import { getDatabase } from '../lib/database';
+import {
+    countersignPod,
+    generatePodPayload,
+    markNonceUsed, storePodReceipt,
+    verifyPodPayload,
+    type PodChallenge
+} from '../lib/pod';
+import { useAuthStore } from '../lib/useAuthStore';
 
 interface Delivery {
   id: string; supply_id: string; source_node_id: string; target_node_id: string;
@@ -73,6 +80,12 @@ export default function DeliveryScreen({ onBack }: { onBack: () => void }) {
 
   useEffect(() => { fetchDeliveries(); }, [fetchDeliveries]);
 
+  // Auto-refresh deliveries every 5s so other devices' changes appear
+//   useEffect(() => {
+//     const interval = setInterval(fetchDeliveries, 5000);
+//     return () => clearInterval(interval);
+//   }, [fetchDeliveries]);
+
   // Fetch graph nodes — cache to local DB, load from cache when offline
   useEffect(() => {
     (async () => {
@@ -104,7 +117,21 @@ export default function DeliveryScreen({ onBack }: { onBack: () => void }) {
         setNodes(cached);
         setFormSource(cached[0].id);
         setFormTarget(cached[1]?.id || cached[0].id);
+        return;
       }
+
+      // No cache either — use static fallback nodes for offline use
+      const fallback = [
+        { id: 'base-camp', name: 'Base Camp', type: 'hub' },
+        { id: 'field-hospital', name: 'Field Hospital', type: 'camp' },
+        { id: 'supply-depot', name: 'Supply Depot', type: 'hub' },
+        { id: 'shelter-a', name: 'Shelter A', type: 'camp' },
+        { id: 'shelter-b', name: 'Shelter B', type: 'camp' },
+        { id: 'drone-base', name: 'Drone Base', type: 'drone_base' },
+      ];
+      setNodes(fallback);
+      setFormSource(fallback[0].id);
+      setFormTarget(fallback[1].id);
     })();
   }, []);
 
@@ -182,6 +209,37 @@ export default function DeliveryScreen({ onBack }: { onBack: () => void }) {
     Alert.alert('Created', `Delivery ${id.slice(0, 12)}...`);
     setShowNewForm(false);
     fetchDeliveries();
+  };
+
+  // ── Delete single delivery ──────────────────────────────
+  const deleteDelivery = async (id: string) => {
+    Alert.alert('Delete', `Delete delivery ${id.slice(0, 8)}...?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: async () => {
+          const db = await getDatabase();
+          await db.runAsync('DELETE FROM local_deliveries WHERE id = ?', [id]);
+          await db.runAsync('DELETE FROM pod_receipts WHERE delivery_id = ?', [id]);
+          fetchDeliveries();
+        },
+      },
+    ]);
+  };
+
+  // ── Clear all deliveries ────────────────────────────────
+  const clearAllDeliveries = async () => {
+    Alert.alert('Clear All', 'Delete all local deliveries and receipts?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete All', style: 'destructive', onPress: async () => {
+          const db = await getDatabase();
+          await db.execAsync('DELETE FROM local_deliveries');
+          await db.execAsync('DELETE FROM pod_receipts');
+          await db.execAsync('DELETE FROM used_nonces');
+          setDeliveries([]);
+        },
+      },
+    ]);
   };
 
   // ── Generate QR (Driver side — M5.1) ─────────────────────
@@ -300,8 +358,27 @@ export default function DeliveryScreen({ onBack }: { onBack: () => void }) {
       const json = await api.get<{ data: any }>(`/delivery/${deliveryId}/chain`);
       setChainData(json.data);
       setShowChain(true);
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
+    } catch {
+      // Offline fallback — build chain from local pod_receipts
+      try {
+        const db = await getDatabase();
+        const localReceipts = await db.getAllAsync<any>(
+          'SELECT * FROM pod_receipts WHERE delivery_id = ? ORDER BY created_at ASC',
+          [deliveryId],
+        );
+        const delivery = deliveries.find(d => d.id === deliveryId);
+        setChainData({
+          delivery: { id: deliveryId, status: delivery?.status || 'unknown' },
+          chain_length: localReceipts.length,
+          fully_verified: localReceipts.every((r: any) => r.status === 'confirmed'),
+          receipts: localReceipts,
+          audit_trail: [],
+          _offline: true,
+        });
+        setShowChain(true);
+      } catch (localErr: any) {
+        Alert.alert('Error', `No chain data available offline: ${localErr.message}`);
+      }
     }
   };
 
@@ -349,6 +426,11 @@ export default function DeliveryScreen({ onBack }: { onBack: () => void }) {
         <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#065f46' }]} onPress={handleScanQr}>
           <Text style={s.actionText}>Scan QR</Text>
         </TouchableOpacity>
+        {deliveries.length > 0 && (
+          <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#7f1d1d' }]} onPress={clearAllDeliveries}>
+            <Text style={s.actionText}>Clear All</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* New Delivery Form */}
@@ -412,12 +494,12 @@ export default function DeliveryScreen({ onBack }: { onBack: () => void }) {
         {deliveries.length === 0 && (
           <Text style={s.emptyText}>No deliveries yet. Tap "+ New Delivery" to create one.</Text>
         )}
-        {deliveries.map(d => (
+        {deliveries.filter(d => d && d.id).map(d => (
           <View key={d.id} style={s.card}>
             <View style={s.cardHeader}>
-              <Text style={s.cardId}>{d.id.slice(0, 8)}...</Text>
-              <View style={[s.badge, { backgroundColor: statusColor(d.status) }]}>
-                <Text style={s.badgeText}>{d.status.toUpperCase()}</Text>
+              <Text style={s.cardId}>{d.id?.slice(0, 8)}...</Text>
+              <View style={[s.badge, { backgroundColor: statusColor(d.status || 'pending') }]}>
+                <Text style={s.badgeText}>{(d.status || 'pending').toUpperCase()}</Text>
               </View>
             </View>
             <Text style={s.cardDetail}>{d.source_node_id} → {d.target_node_id}</Text>
@@ -436,6 +518,9 @@ export default function DeliveryScreen({ onBack }: { onBack: () => void }) {
               )}
               <TouchableOpacity style={[s.smallBtn, { backgroundColor: '#1e3a5f' }]} onPress={() => handleViewChain(d.id)}>
                 <Text style={s.smallBtnText}>Chain</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.smallBtn, { backgroundColor: '#7f1d1d' }]} onPress={() => deleteDelivery(d.id)}>
+                <Text style={s.smallBtnText}>Delete</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -46,6 +46,8 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
       name TEXT,
       role TEXT,
       box_public_key TEXT NOT NULL,
+      ip_address TEXT,
+      port INTEGER,
       cached_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -107,6 +109,10 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
       created_at TEXT DEFAULT (datetime('now'))
     );
   `);
+
+  // Migrations — add columns to existing tables (silently skip if already present)
+  try { await db.execAsync('ALTER TABLE mesh_peers ADD COLUMN ip_address TEXT'); } catch {}
+  try { await db.execAsync('ALTER TABLE mesh_peers ADD COLUMN port INTEGER'); } catch {}
 
   return db;
 }
@@ -268,20 +274,31 @@ export interface MeshPeerRow {
   name: string | null;
   role: string | null;
   box_public_key: string;
+  ip_address: string | null;
+  port: number | null;
   cached_at: string;
 }
 
-export async function cachePeer(deviceId: string, boxPubKey: string, name: string | null, role: string | null): Promise<void> {
+export async function cachePeer(
+  deviceId: string,
+  boxPubKey: string,
+  name: string | null,
+  role: string | null,
+  ipAddress?: string | null,
+  port?: number | null,
+): Promise<void> {
   const db = await getDatabase();
   await db.runAsync(
-    `INSERT INTO mesh_peers (device_id, name, role, box_public_key, cached_at)
-     VALUES (?, ?, ?, ?, datetime('now'))
+    `INSERT INTO mesh_peers (device_id, name, role, box_public_key, ip_address, port, cached_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(device_id) DO UPDATE SET
        name = excluded.name,
        role = excluded.role,
        box_public_key = excluded.box_public_key,
+       ip_address = COALESCE(excluded.ip_address, mesh_peers.ip_address),
+       port = COALESCE(excluded.port, mesh_peers.port),
        cached_at = excluded.cached_at`,
-    [deviceId, name, role, boxPubKey],
+    [deviceId, name, role, boxPubKey, ipAddress ?? null, port ?? null],
   );
 }
 

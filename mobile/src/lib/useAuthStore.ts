@@ -57,6 +57,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   /** Load persisted state from SecureStore on app startup */
   initialize: async () => {
+    // Restore saved API URL (e.g. local LAN backend) before any API calls
+    await api.loadSavedBaseUrl();
+
     const deviceId = await storage.getDeviceId();
     const keypair = await storage.loadKeypair();
     const totpSecret = await storage.loadTotpSecret();

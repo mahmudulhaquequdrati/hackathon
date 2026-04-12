@@ -5,6 +5,7 @@ import { WebView } from 'react-native-webview';
 import { useAuthStore } from '../lib/useAuthStore';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { api } from '../lib/api';
+import { getDatabase } from '../lib/database';
 
 interface GraphNode {
   id: string; name: string; type: string; lat: number; lng: number; status: string;
@@ -31,14 +32,36 @@ export default function RouteMapScreen({ onBack }: { onBack: () => void }) {
   const [selectedVehicle, setSelectedVehicle] = useState<'truck' | 'boat' | 'drone'>('truck');
 
   const fetchGraph = useCallback(async () => {
+    const db = await getDatabase();
     try {
       const json = await api.get<{ data: { nodes: GraphNode[]; edges: GraphEdge[] } }>('/routes/graph');
       if (json.data) {
         setNodes(json.data.nodes);
         setEdges(json.data.edges);
+        // Cache to local DB for offline use
+        await db.execAsync('DELETE FROM cached_nodes');
+        await db.execAsync('DELETE FROM cached_edges');
+        for (const n of json.data.nodes) {
+          await db.runAsync(
+            'INSERT OR REPLACE INTO cached_nodes (id, name, type, lat, lng, status) VALUES (?, ?, ?, ?, ?, ?)',
+            [n.id, n.name, n.type, n.lat, n.lng, n.status],
+          );
+        }
+        for (const e of json.data.edges) {
+          await db.runAsync(
+            'INSERT OR REPLACE INTO cached_edges (id, source_id, target_id, type, distance, travel_time, risk_score, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [e.id, e.source_id, e.target_id, e.type, e.distance, e.travel_time, e.risk_score, e.status],
+          );
+        }
       }
-    } catch (err: any) {
-      Alert.alert('Error', `Failed to load graph: ${err.message}`);
+    } catch {
+      // Offline — load from local cache
+      const cachedNodes = await db.getAllAsync<GraphNode>('SELECT * FROM cached_nodes');
+      const cachedEdges = await db.getAllAsync<GraphEdge>('SELECT * FROM cached_edges');
+      if (cachedNodes.length > 0) {
+        setNodes(cachedNodes);
+        setEdges(cachedEdges);
+      }
     } finally {
       setLoading(false);
     }
@@ -143,9 +166,13 @@ export default function RouteMapScreen({ onBack }: { onBack: () => void }) {
 <div id="map"></div>
 <script>
 var map = L.map('map',{zoomControl:false}).setView([24.95,91.75],10);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'OSM',maxZoom:18,
-}).addTo(map);
+try {
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'OSM',maxZoom:18,errorTileUrl:'',
+  }).addTo(map);
+} catch(e) {
+  // Offline — map works without tiles, nodes/edges still visible
+}
 
 var nodeLayer = L.layerGroup().addTo(map);
 var edgeLayer = L.layerGroup().addTo(map);

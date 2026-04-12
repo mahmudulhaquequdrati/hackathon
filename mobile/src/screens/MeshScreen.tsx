@@ -13,9 +13,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../lib/useAuthStore';
 import { useMeshStore } from '../lib/useMeshStore';
 import { transportManager } from '../lib/mesh-transport';
+import { api } from '../lib/api';
 import type { MeshMessage, MeshPeer } from '../types';
 
-export default function MeshScreen({ onBack }: { onBack: () => void }) {
+export default function MeshScreen({ onBack, onNavigate }: { onBack: () => void; onNavigate?: (screen: string) => void }) {
   const { deviceId } = useAuthStore();
   const {
     inbox,
@@ -45,14 +46,17 @@ export default function MeshScreen({ onBack }: { onBack: () => void }) {
   const [expandedMsg, setExpandedMsg] = useState<string | null>(null);
   const [decryptedCache, setDecryptedCache] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
-  const [transportType, setTransportType] = useState<'ble' | 'http'>('http');
+  const [transportType, setTransportType] = useState<string>('http');
+  const [backendUrl, setBackendUrl] = useState(api.getBaseUrl());
 
   // Poll transport status
   useEffect(() => {
     const interval = setInterval(() => {
       setTransportType(transportManager.activeType);
+      setBackendUrl(api.getBaseUrl());
     }, 5000);
     setTransportType(transportManager.activeType);
+    setBackendUrl(api.getBaseUrl());
     return () => clearInterval(interval);
   }, []);
 
@@ -154,6 +158,21 @@ export default function MeshScreen({ onBack }: { onBack: () => void }) {
           </View>
           <Row label="BLE Available" value={transportManager.isBleActive ? 'Yes' : 'No'} color={transportManager.isBleActive ? '#22c55e' : '#6b7280'} />
           <Row label="HTTP Fallback" value="Available" color="#60a5fa" />
+          <Row
+            label="Backend"
+            value={backendUrl}
+            color={/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(backendUrl) ? '#22c55e' : '#f59e0b'}
+          />
+          <Row
+            label="Network"
+            value={/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(backendUrl) ? 'Local LAN' : 'Remote'}
+            color={/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(backendUrl) ? '#22c55e' : '#f59e0b'}
+          />
+          {onNavigate && (
+            <TouchableOpacity style={{ marginTop: 8, borderWidth: 1, borderColor: '#374151', borderRadius: 8, padding: 8, alignItems: 'center' }} onPress={() => onNavigate('qr-pair')}>
+              <Text style={{ color: '#fbbf24', fontSize: 12, fontWeight: '600' }}>QR Pair & LAN Setup</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Send Message */}

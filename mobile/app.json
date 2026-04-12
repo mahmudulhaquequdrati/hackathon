@@ -42,6 +42,8 @@
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "Digital Delta uses Bluetooth to relay emergency supply messages to nearby devices in areas without internet connectivity.",
         "NSBluetoothPeripheralUsageDescription": "Digital Delta needs Bluetooth to act as a mesh relay node for nearby devices.",
+        "NSLocalNetworkUsageDescription": "Digital Delta uses the local network to relay data between devices in areas without internet connectivity.",
+        "NSCameraUsageDescription": "Digital Delta uses the camera to scan QR codes for device pairing and proof of delivery.",
         "UIBackgroundModes": [
           "bluetooth-central",
           "bluetooth-peripheral"
@@ -62,7 +64,10 @@
         "BLUETOOTH_SCAN",
         "BLUETOOTH_ADVERTISE",
         "BLUETOOTH_CONNECT",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_WIFI_STATE",
+        "ACCESS_NETWORK_STATE",
+        "INTERNET"
       ]
     },
     "web": {
