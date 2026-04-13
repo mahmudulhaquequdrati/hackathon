@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1080">
+<title>Digital Delta — HackFusion 2026</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0A0F1E;
+    --bg-card: rgba(255,255,255,0.04);
+    --bg-card-hover: rgba(255,255,255,0.07);
+    --text: #FFFFFF;
+    --text-muted: rgba(255,255,255,0.42);
+    --text-secondary: rgba(255,255,255,0.65);
+    --brand: #00303b;
+    --accent: #0a5f6e;
+    --accent-bright: #0d8fa6;
+    --accent-glow: rgba(10,95,110,0.25);
+    --dot: rgba(255,255,255,0.06);
+    --border: rgba(255,255,255,0.08);
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  body {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 40px;
+    padding: 40px 0;
+    font-family: var(--font);
+  }
+
+  .slide {
+    width: 1080px;
+    height: 1350px;
+    background: var(--bg);
+    background-image: radial-gradient(var(--dot) 1.5px, transparent 1.5px);
+    background-size: 40px 40px;
+    position: relative;
+    overflow: hidden;
+    color: var(--text);
+    padding: 80px 76px;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+  }
+
+  /* ---------- COMMON ELEMENTS ---------- */
+
+  .slide-counter {
+    position: absolute;
+    bottom: 36px;
+    right: 44px;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+  }
+
+  .badge {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent-bright);
+    display: inline-block;
+  }
+
+  .accent-line {
+    width: 200px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+    margin: 24px 0;
+  }
+
+  .accent-line-short {
+    width: 80px;
+    height: 2px;
+    background: var(--accent);
+    margin: 16px 0;
+  }
+
+  h1 {
+    font-size: 72px;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+  }
+
+  h2 {
+    font-size: 52px;
+    font-weight: 900;
+    letter-spacing: -0.025em;
+    line-height: 1.12;
+  }
+
+  h3 {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  p, .body-text {
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 1.55;
+    color: var(--text-secondary);
+  }
+
+  /* ---------- GEOMETRIC DECORATIONS ---------- */
+
+  .geo-circle {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+  }
+
+  .geo-line {
+    position: absolute;
+    background: var(--border);
+  }
+
+  .glow-blob {
+    position: absolute;
+    border-radius: 9999px;
+    background: var(--accent-glow);
+    filter: blur(80px);
+    pointer-events: none;
+  }
+
+  /* ---------- CARDS ---------- */
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    position: relative;
+  }
+
+  .card-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: var(--text);
+  }
+
+  .card-body {
+    font-size: 19px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+
+  .card-accent {
+    position: absolute;
+    top: 0;
+    left: 32px;
+    right: 32px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+    border-radius: 0 0 2px 2px;
+  }
+
+  /* ---------- BENTO GRID ---------- */
+
+  .bento-2x2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  .bento-1x2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  /* ---------- STAT ---------- */
+
+  .stat-number {
+    font-size: 64px;
+    font-weight: 900;
+    color: var(--accent-bright);
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-top: 8px;
+  }
+
+  /* ---------- MODULE BADGE ---------- */
+
+  .module-tag {
+    display: inline-block;
+    background: var(--accent);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    letter-spacing: 0.06em;
+  }
+
+  .pts-tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.08);
+    color: var(--accent-bright);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 6px;
+    margin-left: 8px;
+    letter-spacing: 0.04em;
+  }
+
+  /* ---------- PRINT ---------- */
+
+  @media print {
+    body { background: white; gap: 0; padding: 0; }
+    .slide { box-shadow: none; margin: 0; }
+  }
+
+  /* ---------- LAYER STACK ---------- */
+
+  .layer {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 32px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    position: relative;
+  }
+
+  .layer + .layer { margin-top: 16px; }
+
+  .layer-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background: var(--accent-glow);
+    border: 1px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+
+  .layer-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .layer-desc {
+    font-size: 17px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  .connector {
+    width: 2px;
+    height: 16px;
+    background: var(--accent);
+    margin: 0 auto;
+    opacity: 0.4;
+  }
+
+  /* ---------- SCREENSHOTS ---------- */
+
+  .screenshot-frame {
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: #111;
+  }
+
+  .screenshot-frame img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .screenshot-caption {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-align: center;
+    margin-top: 12px;
+    letter-spacing: 0.04em;
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== SLIDE 1: COVER ==================== -->
+<div class="slide">
+  <!-- Decorations -->
+  <div class="glow-blob" style="width:500px;height:500px;top:-100px;right:-150px;"></div>
+  <div class="glow-blob" style="width:300px;height:300px;bottom:100px;left:-80px;"></div>
+  <div class="geo-circle" style="width:400px;height:400px;top:-120px;right:-80px;opacity:0.3;"></div>
+  <div class="geo-circle" style="width:200px;height:200px;bottom:200px;left:60px;opacity:0.2;"></div>
+  <div class="geo-line" style="width:1px;height:300px;top:0;left:540px;opacity:0.15;"></div>
+
+  <div style="flex:1;display:flex;flex-direction:column;justify-content:center;">
+    <div class="badge">HACKFUSION 2026</div>
+    <div class="accent-line" style="margin:20px 0 32px;"></div>
+
+    <h1 style="font-size:88px;letter-spacing:-0.04em;">DIGITAL<br>DELTA</h1>
+
+    <p style="font-size:28px;margin-top:32px;max-width:700px;">
+      Offline-first disaster relief logistics platform.<br>
+      <span style="color:var(--accent-bright);">Peer-to-peer. AI-powered. Zero internet required.</span>
+    </p>
+
+    <div class="accent-line" style="margin-top:48px;"></div>
+    <p style="font-size:18px;color:var(--text-muted);margin-top:16px;">
+      Mahmudul Haque Qudrati
+    </p>
+  </div>
+
+  <!-- Geometric border accent -->
+  <div style="position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--accent),var(--accent-bright),transparent);"></div>
+
+  <div class="slide-counter">01 / 08</div>
+</div>
+
+<!-- ==================== SLIDE 2: THE PROBLEM ==================== -->
+<div class="slide">
+  <div class="glow-blob" style="width:400px;height:400px;top:200px;right:-100px;"></div>
+
+  <div class="badge">THE PROBLEM</div>
+  <div class="accent-line-short"></div>
+
+  <h2 style="margin-top:24px;max-width:800px;">When Infrastructure Falls, Lives Are On The Line</h2>
+
+  <p style="margin-top:24px;max-width:750px;font-size:22px;">
+    In flood-prone regions like Bangladesh, disaster response teams face impossible coordination challenges.
+  </p>
+
+  <div style="margin-top:56px;display:flex;flex-direction:column;gap:24px;">
+    <!-- Pain point 1 -->
+    <div class="card">
+      <div class="card-accent"></div>
+      <div style="display:flex;align-items:flex-start;gap:24px;">
+        <div style="font-size:36px;line-height:1;color:var(--accent-bright);font-weight:900;flex-shrink:0;width:48px;">01</div>
+        <div>
+          <div class="card-title">No Internet, No Cellular</div>
+          <div class="card-body">Cell towers flood. Fiber lines snap. Teams lose all ability to coordinate supply movement across affected regions.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pain point 2 -->
+    <div class="card">
+      <div class="card-accent"></div>
+      <div style="display:flex;align-items:flex-start;gap:24px;">
+        <div style="font-size:36px;line-height:1;color:var(--accent-bright);font-weight:900;flex-shrink:0;width:48px;">02</div>
+        <div>
+          <div class="card-title">Roads Flood Unpredictably</div>
+          <div class="card-body">Routes that worked hours ago become impassable. Static routing plans fail. Deliveries stall or go missing entirely.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pain point 3 -->
+    <div class="card">
+      <div class="card-accent"></div>
+      <div style="display:flex;align-items:flex-start;gap:24px;">
+        <div style="font-size:36px;line-height:1;color:var(--accent-bright);font-weight:900;flex-shrink:0;width:48px;">03</div>
+        <div>
+          <div class="card-title">Supply Diversion & No Accountability</div>
+          <div class="card-body">Without cryptographic proof-of-delivery, critical supplies get diverted. There is no tamper-proof audit trail.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-counter">02 / 08</div>
+</div>
+
+<!-- ==================== SLIDE 3: OUR SOLUTION ==================== -->
+<div class="slide">
+  <div class="glow-blob" style="width:500px;height:500px;bottom:-100px;left:-100px;"></div>
+
+  <div class="badge">OUR SOLUTION</div>
+  <div class="accent-line-short"></div>
+
+  <h2 style="margin-top:24px;max-width:800px;">A Platform That Works When Nothing Else Does</h2>
+
+  <p style="margin-top:20px;max-width:700px;font-size:22px;">
+    Digital Delta coordinates disaster relief entirely offline — syncing via Bluetooth mesh, resolving conflicts mathematically, and predicting floods with ML.
+  </p>
+
+  <div class="bento-2x2" style="margin-top:48px;flex:1;">
+    <!-- Pillar 1 -->
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-accent"></div>
+      <div style="font-size:40px;margin-bottom:16px;">&#x1F4F4;</div>
+      <div class="card-title" style="font-size:26px;">Offline-First</div>
+      <div class="card-body" style="flex:1;">Every operation works without internet. SQLite on-device, CRDT conflict resolution, local-first architecture.</div>
+    </div>
+
+    <!-- Pillar 2 -->
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-accent"></div>
+      <div style="font-size:40px;margin-bottom:16px;">&#x1F4E1;</div>
+      <div class="card-title" style="font-size:26px;">Peer-to-Peer</div>
+      <div class="card-body" style="flex:1;">BLE mesh networking with store-and-forward relay. Devices sync directly — no servers needed in the field.</div>
+    </div>
+
+    <!-- Pillar 3 -->
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-accent"></div>
+      <div style="font-size:40px;margin-bottom:16px;">&#x1F9E0;</div>
+      <div class="card-title" style="font-size:26px;">AI-Powered</div>
+      <div class="card-body" style="flex:1;">ML model trained on real Bangladesh flood data predicts route decay at 98.3% accuracy. Proactive rerouting saves lives.</div>
+    </div>
+
+    <!-- Pillar 4 -->
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-accent"></div>
+      <div style="font-size:40px;margin-bottom:16px;">&#x1F512;</div>
+      <div class="card-title" style="font-size:26px;">Crypto-Secure</div>
+      <div class="card-body" style="flex:1;">Ed25519 signatures, TOTP auth, hash-chained audit logs, and cryptographic proof-of-delivery. Zero trust by design.</div>
+    </div>
+  </div>
+
+  <div class="slide-counter">03 / 08</div>
+</div>
+
+<!-- ==================== SLIDE 4: ARCHITECTURE ==================== -->
+<div class="slide">
+  <div class="glow-blob" style="width:350px;height:350px;top:100px;left:-100px;"></div>
+
+  <div class="badge">ARCHITECTURE</div>
+  <div class="accent-line-short"></div>
+
+  <h2 style="margin-top:24px;">How It All Connects</h2>
+
+  <div style="margin-top:48px;flex:1;display:flex;flex-direction:column;justify-content:center;">
+    <!-- Layer 1 -->
+    <div class="layer">
+      <div class="layer-icon">&#x1F4F1;</div>
+      <div>
+        <div class="layer-title">Mobile App</div>
+        <div class="layer-desc">React Native + Expo &bull; TypeScript &bull; Zustand &bull; SQLite</div>
+      </div>
+      <div style="position:absolute;right:32px;top:50%;transform:translateY(-50%);">
+        <span style="font-size:14px;color:var(--accent-bright);font-weight:600;">9 SCREENS</span>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <!-- Layer 2 -->
+    <div class="layer">
+      <div class="layer-icon">&#x1F310;</div>
+      <div>
+        <div class="layer-title">Backend API</div>
+        <div class="layer-desc">Express.js &bull; SQLite WAL &bull; WebSocket &bull; JWT Auth</div>
+      </div>
+      <div style="position:absolute;right:32px;top:50%;transform:translateY(-50%);">
+        <span style="font-size:14px;color:var(--accent-bright);font-weight:600;">8 ROUTE MODULES</span>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <!-- Layer 3 -->
+    <div class="layer">
+      <div class="layer-icon">&#x1F517;</div>
+      <div>
+        <div class="layer-title">Shared CRDT Library</div>
+        <div class="layer-desc">LWW-Register &bull; LWW-Map &bull; Vector Clocks &bull; Zero Dependencies</div>
+      </div>
+      <div style="position:absolute;right:32px;top:50%;transform:translateY(-50%);">
+        <span style="font-size:14px;color:var(--accent-bright);font-weight:600;">PURE JS</span>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <!-- Layer 4 -->
+    <div class="layer">
+      <div class="layer-icon">&#x1F4E1;</div>
+      <div>
+        <div class="layer-title">BLE Mesh Network</div>
+        <div class="layer-desc">Store-and-Forward &bull; Dual-Role Nodes &bull; x25519 Encryption</div>
+      </div>
+      <div style="position:absolute;right:32px;top:50%;transform:translateY(-50%);">
+        <span style="font-size:14px;color:var(--accent-bright);font-weight:600;">E2E ENCRYPTED</span>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <!-- Layer 5 -->
+    <div class="layer">
+      <div class="layer-icon">&#x1F9E0;</div>
+      <div>
+        <div class="layer-title">ML Prediction Engine</div>
+        <div class="layer-desc">Logistic Regression &bull; 200 Bangladesh Weather Rows &bull; On-Device</div>
+      </div>
+      <div style="position:absolute;right:32px;top:50%;transform:translateY(-50%);">
+        <span style="font-size:14px;color:var(--accent-bright);font-weight:600;">98.3% ACCURACY</span>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <!-- Layer 6 -->
+    <div class="layer">
+      <div class="layer-icon">&#x1F525;</div>
+      <div>
+        <div class="layer-title">Chaos Simulation Server</div>
+        <div class="layer-desc">Flask &bull; Random Flood Events Every 30s &bull; Edge Failure Injection</div>
+      </div>
+      <div style="position:absolute;right:32px;top:50%;transform:translateY(-50%);">
+        <span style="font-size:14px;color:var(--accent-bright);font-weight:600;">PYTHON</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-counter">04 / 08</div>
+</div>
+
+<!-- ==================== SLIDE 5: MODULES M1–M4 ==================== -->
+<div class="slide">
+  <div class="glow-blob" style="width:400px;height:400px;bottom:0;right:-100px;"></div>
+
+  <div class="badge">ENGINEERING MODULES</div>
+  <div class="accent-line-short"></div>
+
+  <h2 style="margin-top:24px;">Core Modules M1–M4</h2>
+  <p style="margin-top:12px;font-size:20px;">38 points across 4 modules</p>
+
+  <div class="bento-2x2" style="margin-top:40px;flex:1;">
+    <!-- M1 -->
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-accent"></div>
+      <div><span class="module-tag">M1</span><span class="pts-tag">9 PTS</span></div>
+      <div class="card-title" style="font-size:24px;margin-top:8px;">Secure Authentication</div>
+      <div class="card-body" style="flex:1;">
+        Ed25519 keypair generation<br>
+        Offline TOTP (RFC 6238)<br>
+        RBAC with 5 roles<br>
+        Hash-chained audit log
+      </div>
+    </div>
+
+    <!-- M2 -->
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-accent"></div>
+      <div><span class="module-tag">M2</span><span class="pts-tag">10 PTS</span></div>
+      <div class="card-title" style="font-size:24px;margin-top:8px;">CRDT Sync</div>
+      <div class="card-body" style="flex:1;">
+        LWW-Register & LWW-Map<br>
+        Vector clock ordering<br>
+        Delta-sync over BLE<br>
+        Conflict resolution UI
+      </div>
+    </div>
+
+    <!-- M3 -->
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-accent"></div>
+      <div><span class="module-tag">M3</span><span class="pts-tag">9 PTS</span></div>
+      <div class="card-title" style="font-size:24px;margin-top:8px;">Mesh Network</div>
+      <div class="card-body" style="flex:1;">
+        BLE store-and-forward relay<br>
+        Dual-role node switching<br>
+        x25519 E2E encryption<br>
+        TTL-based message expiry
+      </div>
+    </div>
+
+    <!-- M4 -->
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-accent"></div>
+      <div><span class="module-tag">M4</span><span class="pts-tag">10 PTS</span></div>
+      <div class="card-title" style="font-size:24px;margin-top:8px;">Vehicle Routing</div>
+      <div class="card-body" style="flex:1;">
+        Weighted directed graph<br>
+        Dijkstra pathfinding<br>
+        Multi-modal: truck, boat, drone<br>
+        Dynamic edge status updates
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-counter">05 / 08</div>
+</div>
+
+<!-- ==================== SLIDE 6: MODULES M5–M8 ==================== -->
+<div class="slide">
+  <div class="glow-blob" style="width:400px;height:400px;top:100px;left:-100px;"></div>
+
+  <div class="badge">ENGINEERING MODULES</div>
+  <div class="accent-line-short"></div>
+
+  <h2 style="margin-top:24px;">Advanced Modules M5–M8</h2>
+  <p style="margin-top:12px;font-size:20px;">31 points across 4 modules &bull; <span style="color:var(--accent-bright);font-weight:700;">69 total</span></p>
+
+  <div class="bento-2x2" style="margin-top:40px;flex:1;">
+    <!-- M5 -->
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-accent"></div>
+      <div><span class="module-tag">M5</span><span class="pts-tag">7 PTS</span></div>
+      <div class="card-title" style="font-size:24px;margin-top:8px;">Proof-of-Delivery</div>
+      <div class="card-body" style="flex:1;">
+        QR challenge-response<br>
+        Ed25519 mutual signatures<br>
+        Nonce replay protection<br>
+        CRDT ledger receipts
+      </div>
+    </div>
+
+    <!-- M6 -->
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-accent"></div>
+      <div><span class="module-tag">M6</span><span class="pts-tag">7 PTS</span></div>
+      <div class="card-title" style="font-size:24px;margin-top:8px;">Triage Engine</div>
+      <div class="card-body" style="flex:1;">
+        SLA breach prediction<br>
+        Autonomous preemption<br>
+        P0–P3 priority taxonomy<br>
+        Decision audit trail
+      </div>
+    </div>
+
+    <!-- M7 -->
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-accent"></div>
+      <div><span class="module-tag">M7</span><span class="pts-tag">9 PTS</span></div>
+      <div class="card-title" style="font-size:24px;margin-top:8px;">Predictive Route Decay</div>
+      <div class="card-body" style="flex:1;">
+        Logistic regression model<br>
+        Real Bangladesh flood data<br>
+        98.3% prediction accuracy<br>
+        Proactive rerouting
+      </div>
+    </div>
+
+    <!-- M8 -->
+    <div class="card" style="display:flex;flex-direction:column;">
+      <div class="card-accent"></div>
+      <div><span class="module-tag">M8</span><span class="pts-tag">9 PTS</span></div>
+      <div class="card-title" style="font-size:24px;margin-top:8px;">Drone Handoff</div>
+      <div class="card-body" style="flex:1;">
+        Reachability analysis<br>
+        Rendezvous point computation<br>
+        Battery-aware throttling<br>
+        Hybrid fleet orchestration
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-counter">06 / 08</div>
+</div>
+
+<!-- ==================== SLIDE 7: SCREENSHOTS ==================== -->
+<div class="slide">
+  <div class="glow-blob" style="width:400px;height:400px;top:-50px;right:-100px;"></div>
+
+  <div class="badge">LIVE DEMO</div>
+  <div class="accent-line-short"></div>
+
+  <h2 style="margin-top:24px;">The App In Action</h2>
+
+  <div style="margin-top:40px;display:flex;gap:24px;flex:1;">
+    <!-- Screenshot 1 -->
+    <div style="flex:1;display:flex;flex-direction:column;">
+      <div class="screenshot-frame" style="flex:1;display:flex;align-items:center;justify-content:center;background:#0d1117;">
+        <img src="../../map-screenshot.png" alt="Route Map" style="width:100%;height:auto;object-fit:contain;">
+      </div>
+      <div class="screenshot-caption" style="margin-top:16px;">
+        Multi-modal Route Map<br>
+        <span style="font-size:14px;color:var(--text-muted);font-weight:400;">Truck, Boat & Drone paths across Sylhet region</span>
+      </div>
+    </div>
+
+    <!-- Screenshot 2 -->
+    <div style="flex:1;display:flex;flex-direction:column;">
+      <div class="screenshot-frame" style="flex:1;display:flex;align-items:center;justify-content:center;background:#0d1117;">
+        <img src="../../add_new_supply.png" alt="Add Supply" style="width:100%;height:auto;object-fit:contain;">
+      </div>
+      <div class="screenshot-caption" style="margin-top:16px;">
+        Supply Management<br>
+        <span style="font-size:14px;color:var(--text-muted);font-weight:400;">Priority triage P0–P3 with category selection</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-counter">07 / 08</div>
+</div>
+
+<!-- ==================== SLIDE 8: IMPACT & RESULTS ==================== -->
+<div class="slide">
+  <div class="glow-blob" style="width:600px;height:600px;top:50%;left:50%;transform:translate(-50%,-50%);"></div>
+  <div class="geo-circle" style="width:500px;height:500px;top:50%;left:50%;transform:translate(-50%,-50%);opacity:0.15;"></div>
+  <div class="geo-circle" style="width:700px;height:700px;top:50%;left:50%;transform:translate(-50%,-50%);opacity:0.08;"></div>
+
+  <div class="badge">IMPACT</div>
+  <div class="accent-line-short"></div>
+
+  <h2 style="margin-top:24px;">By The Numbers</h2>
+
+  <div style="margin-top:48px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px;">
+    <div style="text-align:center;">
+      <div class="stat-number">69</div>
+      <div class="stat-label">Total Points</div>
+    </div>
+    <div style="text-align:center;">
+      <div class="stat-number">8</div>
+      <div class="stat-label">Engineering Modules</div>
+    </div>
+    <div style="text-align:center;">
+      <div class="stat-number">98.3%</div>
+      <div class="stat-label">ML Accuracy</div>
+    </div>
+  </div>
+
+  <div style="margin-top:40px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px;">
+    <div style="text-align:center;">
+      <div class="stat-number">14</div>
+      <div class="stat-label">Database Tables</div>
+    </div>
+    <div style="text-align:center;">
+      <div class="stat-number">9</div>
+      <div class="stat-label">Mobile Screens</div>
+    </div>
+    <div style="text-align:center;">
+      <div class="stat-number">0</div>
+      <div class="stat-label">Internet Required</div>
+    </div>
+  </div>
+
+  <!-- Closing statement -->
+  <div style="margin-top:auto;text-align:center;padding-bottom:40px;">
+    <div class="accent-line" style="margin:0 auto 32px;"></div>
+    <p style="font-size:32px;font-weight:800;color:var(--text);letter-spacing:-0.02em;line-height:1.3;">
+      Built for the worst day.<br>
+      <span style="color:var(--accent-bright);">Ready before it comes.</span>
+    </p>
+    <div style="margin-top:32px;">
+      <p style="font-size:18px;color:var(--text-muted);font-weight:500;">Mahmudul Haque Qudrati</p>
+      <p style="font-size:15px;color:var(--text-muted);margin-top:4px;">@mahmudulhaquequdrati</p>
+    </div>
+  </div>
+
+  <!-- Top accent bar -->
+  <div style="position:absolute;bottom:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--accent),var(--accent-bright),transparent);"></div>
+
+  <div class="slide-counter">08 / 08</div>
+</div>
+
+</body>
+</html>

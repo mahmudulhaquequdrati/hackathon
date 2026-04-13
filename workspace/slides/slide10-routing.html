@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #030712; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  font-family: Arial, sans-serif; display: flex; flex-direction: column;
+  background-image: url('bg-dark.png'); background-size: cover;
+}
+.top-accent { position: absolute; top: 0; left: 0; width: 100%; height: 5pt; }
+.top-accent img { width: 100%; height: 5pt; }
+.header { margin: 36pt 0 0 50pt; }
+h2 { color: #06b6d4; font-size: 13pt; margin: 0 0 4pt 0; font-weight: normal; letter-spacing: 2pt; }
+h1 { color: #f9fafb; font-size: 30pt; margin: 0; }
+.content { margin: 20pt 50pt 0 50pt; width: 380pt; }
+ul { list-style: none; padding: 0; margin: 0; }
+li { color: #e5e7eb; font-size: 13.5pt; margin: 0 0 12pt 0; line-height: 1.4; }
+h3 { color: #06b6d4; font-size: 13pt; margin: 12pt 0 0 0; font-family: Courier New, monospace; }
+.map-area { position: absolute; right: 36pt; top: 30pt; }
+.map-area div { width: 180pt; height: 355pt; }
+</style>
+</head>
+<body>
+<div class="top-accent"><img src="bar-top-cyan.png"></div>
+<div class="header">
+  <h2>ROUTING</h2>
+  <h1>Multi-Modal Vehicle Routing</h1>
+</div>
+<div class="content">
+  <ul>
+    <li>6 nodes across Sylhet district, 7 weighted edges</li>
+    <li><b>Truck</b> = Road  |  <b>Boat</b> = Waterway  |  <b>Drone</b> = Airway</li>
+    <li>Dijkstra shortest-path, risk-aware cost</li>
+    <li>Dynamic rerouting via WebSocket on failure</li>
+    <li>Drone max payload: 15 kg</li>
+  </ul>
+  <h3>cost = travel_time x (1 + risk_score)</h3>
+</div>
+<div class="map-area">
+  <div id="map-img" class="placeholder" style="width: 180pt; height: 355pt;"></div>
+</div>
+</body>
+</html>

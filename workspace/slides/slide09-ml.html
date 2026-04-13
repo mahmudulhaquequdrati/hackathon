@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #030712; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  font-family: Arial, sans-serif; display: flex; flex-direction: column;
+  background-image: url('bg-dark.png'); background-size: cover;
+}
+.top-accent { position: absolute; top: 0; left: 0; width: 100%; height: 5pt; }
+.top-accent img { width: 100%; height: 5pt; }
+.bar { position: absolute; left: 44pt; top: 110pt; }
+.bar img { width: 5pt; height: 220pt; }
+.header { margin: 44pt 0 0 60pt; }
+h2 { color: #f59e0b; font-size: 13pt; margin: 0 0 4pt 0; font-weight: normal; letter-spacing: 2pt; }
+h1 { color: #f9fafb; font-size: 34pt; margin: 0; }
+.content { margin: 24pt 60pt 0 60pt; }
+ul { list-style: none; padding: 0; margin: 0; }
+li { color: #e5e7eb; font-size: 14.5pt; margin: 0 0 14pt 0; line-height: 1.4; }
+.stats { margin: 16pt 60pt 0 60pt; }
+.stats p { color: #22c55e; font-size: 17pt; margin: 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="top-accent"><img src="bar-top-cyan.png"></div>
+<div class="bar"><img src="bar-amber.png"></div>
+<div class="header">
+  <h2>ML / AI</h2>
+  <h1>ML-Powered Flood Prediction</h1>
+</div>
+<div class="content">
+  <ul>
+    <li>Trained on 200 rows from Bangladesh weather stations</li>
+    <li><b>Features:</b> rainfall, humidity, altitude, soil saturation</li>
+    <li>Logistic regression — gradient descent (1000 epochs)</li>
+    <li>Runs in <b>pure JavaScript</b> on-device, no ML libraries</li>
+    <li>High-risk edges penalized in Dijkstra routing weights</li>
+  </ul>
+</div>
+<div class="stats">
+  <p><b>98.3% Accuracy  |  97.2% Precision  |  100% Recall  |  F1: 0.986</b></p>
+</div>
+</body>
+</html>

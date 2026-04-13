@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #030712; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  font-family: Arial, sans-serif; display: flex; flex-direction: column;
+  background-image: url('bg-dark.png'); background-size: cover;
+}
+.top-accent { position: absolute; top: 0; left: 0; width: 100%; height: 5pt; }
+.top-accent img { width: 100%; height: 5pt; }
+.bar { position: absolute; left: 44pt; top: 110pt; }
+.bar img { width: 5pt; height: 210pt; }
+.header { margin: 44pt 0 0 60pt; }
+h2 { color: #22c55e; font-size: 13pt; margin: 0 0 4pt 0; font-weight: normal; letter-spacing: 2pt; }
+h1 { color: #f9fafb; font-size: 34pt; margin: 0; }
+.content { margin: 28pt 60pt 0 60pt; }
+ul { list-style: none; padding: 0; margin: 0; }
+li { color: #e5e7eb; font-size: 15pt; margin: 0 0 18pt 0; line-height: 1.45; }
+</style>
+</head>
+<body>
+<div class="top-accent"><img src="bar-top-cyan.png"></div>
+<div class="bar"><img src="bar-green.png"></div>
+<div class="header">
+  <h2>KEY FEATURE</h2>
+  <h1>Offline-First CRDT Sync</h1>
+</div>
+<div class="content">
+  <ul>
+    <li><b>LWW-Map:</b> Each supply record is a map of Last-Writer-Wins registers</li>
+    <li><b>Vector Clocks</b> track causal ordering across all devices</li>
+    <li><b>Delta-Sync:</b> Only changed records transmitted (under 10 KB)</li>
+    <li><b>Zero Central Arbiter</b> — backend is a peer, not authority</li>
+    <li><b>Conflicts:</b> Higher timestamp wins, tie-break on node ID</li>
+  </ul>
+</div>
+</body>
+</html>

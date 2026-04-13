@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #030712; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  font-family: Arial, sans-serif; display: flex; flex-direction: column;
+  background-image: url('bg-dark.png'); background-size: cover;
+}
+.top-accent { position: absolute; top: 0; left: 0; width: 100%; height: 5pt; }
+.top-accent img { width: 100%; height: 5pt; }
+.bar { position: absolute; left: 44pt; top: 110pt; }
+.bar img { width: 5pt; height: 230pt; }
+.header { margin: 44pt 0 0 60pt; }
+h2 { color: #f59e0b; font-size: 13pt; margin: 0 0 4pt 0; font-weight: normal; letter-spacing: 2pt; }
+h1 { color: #f9fafb; font-size: 32pt; margin: 0; }
+.content { margin: 28pt 60pt 0 60pt; }
+ul { list-style: none; padding: 0; margin: 0; }
+li { color: #e5e7eb; font-size: 14pt; margin: 0 0 20pt 0; line-height: 1.45; }
+</style>
+</head>
+<body>
+<div class="top-accent"><img src="bar-top-cyan.png"></div>
+<div class="bar"><img src="bar-amber.png"></div>
+<div class="header">
+  <h2>MODULES 1 - 4</h2>
+  <h1>Engineering Modules (Part 1)</h1>
+</div>
+<div class="content">
+  <ul>
+    <li><b>M1  Secure Auth (9 pts)</b> — Ed25519 keypairs, TOTP offline OTP, RBAC, hash-chained audit</li>
+    <li><b>M2  CRDT Sync (10 pts)</b> — LWW-Map, vector clocks, BLE delta-sync, conflict UI</li>
+    <li><b>M3  Mesh Network (9 pts)</b> — Store-and-forward relay, x25519 E2E encryption</li>
+    <li><b>M4  Vehicle Routing (10 pts)</b> — Dijkstra pathfinding, truck/boat/drone constraints</li>
+  </ul>
+</div>
+</body>
+</html>

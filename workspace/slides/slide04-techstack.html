@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #030712; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  font-family: Arial, sans-serif; display: flex; flex-direction: column;
+  background-image: url('bg-dark.png'); background-size: cover;
+}
+.top-accent { position: absolute; top: 0; left: 0; width: 100%; height: 5pt; }
+.top-accent img { width: 100%; height: 5pt; }
+.bar { position: absolute; left: 44pt; top: 110pt; }
+.bar img { width: 5pt; height: 230pt; }
+.header { margin: 44pt 0 0 60pt; }
+h2 { color: #06b6d4; font-size: 13pt; margin: 0 0 4pt 0; font-weight: normal; letter-spacing: 2pt; }
+h1 { color: #f9fafb; font-size: 36pt; margin: 0; }
+.content { margin: 24pt 60pt 0 60pt; }
+ul { list-style: none; padding: 0; margin: 0; }
+li { color: #e5e7eb; font-size: 14.5pt; margin: 0 0 13pt 0; line-height: 1.4; }
+</style>
+</head>
+<body>
+<div class="top-accent"><img src="bar-top-cyan.png"></div>
+<div class="bar"><img src="bar-cyan.png"></div>
+<div class="header">
+  <h2>STACK</h2>
+  <h1>Technology Stack</h1>
+</div>
+<div class="content">
+  <ul>
+    <li><b>Backend:</b>  Express.js + better-sqlite3 + WebSocket</li>
+    <li><b>Mobile:</b>  React Native 0.81 + Expo 54 + TypeScript</li>
+    <li><b>Database:</b>  SQLite on server and device (14 tables)</li>
+    <li><b>Security:</b>  Ed25519, x25519, JWT, TOTP (RFC 6238)</li>
+    <li><b>ML:</b>  Pure JS logistic regression (98.3% accuracy)</li>
+    <li><b>Sync:</b>  Custom CRDT (LWW-Map, Vector Clocks)</li>
+    <li><b>Mesh:</b>  BLE with store-and-forward relay</li>
+  </ul>
+</div>
+</body>
+</html>

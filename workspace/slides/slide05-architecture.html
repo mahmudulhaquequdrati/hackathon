@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #030712; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  font-family: Arial, sans-serif; display: flex; flex-direction: column;
+  background-image: url('bg-dark.png'); background-size: cover;
+}
+.top-accent { position: absolute; top: 0; left: 0; width: 100%; height: 5pt; }
+.top-accent img { width: 100%; height: 5pt; }
+.header { margin: 44pt 0 0 60pt; }
+h2 { color: #06b6d4; font-size: 13pt; margin: 0 0 4pt 0; font-weight: normal; letter-spacing: 2pt; }
+h1 { color: #f9fafb; font-size: 34pt; margin: 0; }
+.content { margin: 24pt 60pt 0 60pt; }
+ul { list-style: none; padding: 0; margin: 0; }
+li { color: #e5e7eb; font-size: 15pt; margin: 0 0 14pt 0; line-height: 1.45; }
+.stats { margin: 20pt 60pt 0 60pt; }
+.stats p { color: #06b6d4; font-size: 16pt; margin: 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="top-accent"><img src="bar-top-cyan.png"></div>
+<div class="header">
+  <h2>ARCHITECTURE</h2>
+  <h1>System Architecture</h1>
+</div>
+<div class="content">
+  <ul>
+    <li><b>Mobile App</b> (React Native + Expo) connects via WebSocket to <b>Backend API</b> (Express + SQLite)</li>
+    <li><b>BLE Mesh</b> enables peer-to-peer device communication offline</li>
+    <li><b>Shared CRDT Library</b> (LWW-Map, Vector Clock) syncs state across all nodes</li>
+    <li><b>Chaos Server</b> (Flask) simulates flood events on network edges</li>
+  </ul>
+</div>
+<div class="stats">
+  <p><b>9 Screens  |  9 Route Handlers  |  9 Services  |  14 DB Tables</b></p>
+</div>
+</body>
+</html>

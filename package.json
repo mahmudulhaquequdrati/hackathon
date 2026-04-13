@@ -13,5 +13,10 @@
     "db:reset": "cd backend && node src/db/reset.js",
     "db:seed": "cd backend && node src/db/seed.js",
     "db:setup": "npm run db:reset && pnpm run db:seed"
+  },
+  "dependencies": {
+    "playwright": "^1.59.1",
+    "pptxgenjs": "^4.0.1",
+    "sharp": "^0.34.5"
   }
 }

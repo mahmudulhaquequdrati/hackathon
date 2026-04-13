@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #030712; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  font-family: Arial, sans-serif; display: flex; flex-direction: column;
+  background-image: url('bg-dark.png'); background-size: cover;
+}
+.top-accent { position: absolute; top: 0; left: 0; width: 100%; height: 5pt; }
+.top-accent img { width: 100%; height: 5pt; }
+.bar { position: absolute; left: 44pt; top: 110pt; }
+.bar img { width: 5pt; height: 240pt; }
+.header { margin: 44pt 0 0 60pt; }
+h2 { color: #06b6d4; font-size: 13pt; margin: 0 0 4pt 0; font-weight: normal; letter-spacing: 2pt; }
+h1 { color: #f9fafb; font-size: 34pt; margin: 0; }
+.content { margin: 20pt 60pt 0 60pt; }
+h3 { color: #06b6d4; font-size: 15pt; margin: 10pt 0 6pt 0; }
+h3.green { color: #22c55e; }
+ul { list-style: none; padding: 0; margin: 0; }
+li { color: #e5e7eb; font-size: 13pt; margin: 0 0 7pt 0; line-height: 1.35; }
+</style>
+</head>
+<body>
+<div class="top-accent"><img src="bar-top-cyan.png"></div>
+<div class="bar"><img src="bar-cyan.png"></div>
+<div class="header">
+  <h2>TRUST AND COMPLIANCE</h2>
+  <h1>Security and Accessibility</h1>
+</div>
+<div class="content">
+  <h3>Security</h3>
+  <ul>
+    <li>Ed25519 digital signatures for all critical operations</li>
+    <li>x25519 E2E encryption on mesh (zero-knowledge relays)</li>
+    <li>Hash-chained audit log with tamper detection</li>
+    <li>Nonce replay protection on proof-of-delivery</li>
+  </ul>
+  <h3 class="green">Accessibility (WCAG)</h3>
+  <ul>
+    <li>High contrast dark theme: 19.4:1 ratio (exceeds AA 4.5:1)</li>
+    <li>Color-independent indicators: text labels alongside color</li>
+    <li>Semantic typography scale, 44px minimum touch targets</li>
+  </ul>
+</div>
+</body>
+</html>
