@@ -1,15 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, Alert, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, Alert, StyleSheet, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../lib/useAuthStore';
+import { Card } from '../components/Card';
+import { ActionButton } from '../components/ActionButton';
+import { colors } from '../theme/colors';
+import { textStyles, fontSize, fontWeight } from '../theme/typography';
+import { spacing, radius } from '../theme/spacing';
 import type { Role } from '../types';
 
-const ROLES: { value: Role; label: string }[] = [
-  { value: 'commander', label: 'Commander' },
-  { value: 'dispatcher', label: 'Dispatcher' },
-  { value: 'field_agent', label: 'Field Agent' },
-  { value: 'drone_pilot', label: 'Drone Pilot' },
-  { value: 'observer', label: 'Observer' },
+const ROLES: { value: Role; label: string; desc: string; icon: string }[] = [
+  { value: 'commander', label: 'Camp Commander', desc: 'Full access - manage all operations', icon: '\u2605' },
+  { value: 'dispatcher', label: 'Dispatcher', desc: 'Manage supplies, deliveries & routes', icon: '\u2708' },
+  { value: 'field_agent', label: 'Field Agent', desc: 'View supplies, manage deliveries', icon: '\u2691' },
+  { value: 'drone_pilot', label: 'Drone Pilot', desc: 'Routes, deliveries & fleet ops', icon: '\u2B22' },
+  { value: 'observer', label: 'Observer', desc: 'Read-only access to all data', icon: '\u25CE' },
 ];
 
 export default function LoginScreen({ navigation }: any) {
@@ -18,10 +23,29 @@ export default function LoginScreen({ navigation }: any) {
     otpTimeRemaining, registerDevice, verifyOtp, refreshOtp,
   } = useAuthStore();
 
-  const [step, setStep] = useState<'register' | 'otp'>(totpSecret ? 'otp' : 'register');
+  const [step, setStep] = useState<'register' | 'generating' | 'otp'>(totpSecret ? 'otp' : 'register');
   const [selectedRole, setSelectedRole] = useState<Role>('field_agent');
   const [name, setName] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
+
+  const waveAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+  }, [fadeAnim]);
+
+  useEffect(() => {
+    const wave = Animated.loop(
+      Animated.sequence([
+        Animated.timing(waveAnim, { toValue: 1, duration: 3000, useNativeDriver: true }),
+        Animated.timing(waveAnim, { toValue: 0, duration: 3000, useNativeDriver: true }),
+      ]),
+    );
+    wave.start();
+    return () => wave.stop();
+  }, [waveAnim]);
 
   useEffect(() => {
     if (totpSecret && step === 'register') setStep('otp');
@@ -34,8 +58,25 @@ export default function LoginScreen({ navigation }: any) {
   }, [step, totpSecret, refreshOtp]);
 
   const handleRegister = async () => {
+    setStep('generating');
     await registerDevice(selectedRole, name || undefined);
-    if (useAuthStore.getState().totpSecret) setStep('otp');
+    if (useAuthStore.getState().totpSecret) {
+      setTimeout(() => setStep('otp'), 1200);
+    } else {
+      setStep('register');
+    }
+  };
+
+  const handleOtpInput = (text: string) => {
+    const clean = text.replace(/[^0-9]/g, '').slice(0, 6);
+    setOtpCode(clean);
+    const digits = clean.split('');
+    while (digits.length < 6) digits.push('');
+    setOtpDigits(digits);
+  };
+
+  const handleAutoFill = () => {
+    if (currentOtp) handleOtpInput(currentOtp);
   };
 
   const handleVerify = async () => {
@@ -44,147 +85,379 @@ export default function LoginScreen({ navigation }: any) {
     if (useAuthStore.getState().isAuthenticated) navigation.replace('Main');
   };
 
+  const waveTranslate = waveAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -8] });
+
+  // Key generation animation step
+  if (step === 'generating') {
+    return (
+      <SafeAreaView style={s.safe}>
+        <Animated.View style={[s.generatingWrap, { opacity: fadeAnim }]}>
+          <View style={s.logoLg}>
+            <Animated.Text style={[s.logoIcon, { transform: [{ translateY: waveTranslate }] }]}>
+              {'\u0394'}
+            </Animated.Text>
+          </View>
+          <Text style={s.genTitle}>Generating Secure Keys</Text>
+          <View style={s.genSteps}>
+            <View style={s.genStep}>
+              <Text style={s.genCheck}>{'\u2713'}</Text>
+              <Text style={s.genStepText}>Ed25519 Key Pair (Signing)</Text>
+            </View>
+            <View style={s.genStep}>
+              <Text style={s.genCheck}>{'\u2713'}</Text>
+              <Text style={s.genStepText}>X25519 Key Pair (Encryption)</Text>
+            </View>
+            <View style={s.genStep}>
+              <ActivityIndicator size="small" color={colors.accent.blue} style={{ marginRight: spacing.sm }} />
+              <Text style={s.genStepText}>TOTP Secret (RFC 6238)</Text>
+            </View>
+          </View>
+          <Text style={s.genHint}>Keys stored securely on device</Text>
+        </Animated.View>
+      </SafeAreaView>
+    );
+  }
+
   if (step === 'register') {
     return (
       <SafeAreaView style={s.safe}>
-        <ScrollView contentContainerStyle={s.content}>
-          <View style={s.center}>
-            <View style={s.logo}><Text style={s.logoT}>DD</Text></View>
-            <Text style={s.title}>Digital Delta</Text>
-            <Text style={s.sub}>Disaster Relief Logistics</Text>
-          </View>
+        <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+          {/* Logo & Brand */}
+          <Animated.View style={[s.brandWrap, { opacity: fadeAnim }]}>
+            <View style={s.logoLg}>
+              <Animated.Text style={[s.logoIcon, { transform: [{ translateY: waveTranslate }] }]}>
+                {'\u0394'}
+              </Animated.Text>
+            </View>
+            <Text style={s.brandTitle}>Digital Delta</Text>
+            <Text style={s.brandSub}>Disaster Relief Logistics Platform</Text>
+            <View style={s.securityTag}>
+              <Text style={s.securityIcon}>{'\u26BF'}</Text>
+              <Text style={s.securityText}>Zero-Trust | Offline-First | E2E Encrypted</Text>
+            </View>
+          </Animated.View>
 
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Register Device</Text>
+          {/* Registration Card */}
+          <Card style={s.regCard}>
+            <Text style={s.cardTitle}>Device Registration</Text>
+            <Text style={s.cardSub}>Your device will be provisioned with cryptographic keys for secure communication</Text>
 
-            <Text style={s.label}>Device ID</Text>
-            <View style={s.readonly}><Text style={s.mono} numberOfLines={1}>{deviceId}</Text></View>
+            {/* Device ID */}
+            <Text style={s.fieldLabel}>Device ID</Text>
+            <View style={s.deviceIdBox}>
+              <Text style={s.deviceIdIcon}>{'\u2B22'}</Text>
+              <Text style={s.deviceIdText} numberOfLines={1}>{deviceId}</Text>
+            </View>
 
-            <Text style={s.label}>Name (optional)</Text>
-            <TextInput style={s.input} value={name} onChangeText={setName} placeholder="Your name" placeholderTextColor="#6b7280" />
+            {/* Name */}
+            <Text style={s.fieldLabel}>Your Name</Text>
+            <TextInput
+              style={s.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="Enter your name"
+              placeholderTextColor={colors.text.muted}
+            />
 
-            <Text style={s.label}>Role</Text>
-            <View style={s.roleWrap}>
-              {ROLES.map(({ value, label }) => (
-                <TouchableOpacity
-                  key={value}
-                  style={[s.roleBtn, selectedRole === value && s.roleSel]}
-                  onPress={() => setSelectedRole(value)}
-                >
-                  <Text style={[s.roleTxt, selectedRole === value && s.roleSelTxt]}>{label}</Text>
-                </TouchableOpacity>
-              ))}
+            {/* Role Selection */}
+            <Text style={s.fieldLabel}>Select Role</Text>
+            <View style={s.rolesGrid}>
+              {ROLES.map(({ value, label, desc, icon }) => {
+                const isSelected = selectedRole === value;
+                return (
+                  <TouchableOpacity
+                    key={value}
+                    style={[s.roleCard, isSelected && s.roleCardSelected]}
+                    onPress={() => setSelectedRole(value)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={s.roleHeader}>
+                      <View style={[s.roleIconWrap, isSelected && s.roleIconWrapActive]}>
+                        <Text style={[s.roleIcon, isSelected && s.roleIconActive]}>{icon}</Text>
+                      </View>
+                      <View style={s.roleInfo}>
+                        <Text style={[s.roleName, isSelected && s.roleNameActive]}>{label}</Text>
+                        <Text style={s.roleDesc}>{desc}</Text>
+                      </View>
+                      {isSelected && (
+                        <View style={s.roleCheckmark}>
+                          <Text style={s.roleCheckText}>{'\u2713'}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             {error ? <Text style={s.err}>{error}</Text> : null}
 
-            <TouchableOpacity style={s.primary} onPress={handleRegister} disabled={isLoading}>
-              {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryTxt}>Register & Generate Keys</Text>}
-            </TouchableOpacity>
+            <ActionButton
+              title="Register & Generate Keys"
+              onPress={handleRegister}
+              loading={isLoading}
+              fullWidth
+              size="lg"
+              style={{ marginTop: spacing.xl }}
+            />
 
-            <TouchableOpacity onPress={() => totpSecret ? setStep('otp') : Alert.alert('Not registered', 'Register first.')}>
+            <TouchableOpacity onPress={() => totpSecret ? setStep('otp') : Alert.alert('Not registered', 'Register first.')} style={s.linkWrap}>
               <Text style={s.link}>Already registered? Login with OTP</Text>
             </TouchableOpacity>
-          </View>
+          </Card>
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  // OTP step
+  // OTP Verification Step
+  const timerColor = otpTimeRemaining <= 5 ? colors.status.error : otpTimeRemaining <= 10 ? colors.status.warning : colors.status.success;
+  const timerBg = otpTimeRemaining <= 5 ? colors.status.errorMuted : otpTimeRemaining <= 10 ? colors.status.warningMuted : colors.status.successMuted;
+
   return (
     <SafeAreaView style={s.safe}>
-      <ScrollView contentContainerStyle={s.content}>
-        <View style={s.center}>
-          <View style={[s.logo, { backgroundColor: 'rgba(34,197,94,0.2)' }]}><Text style={[s.logoT, { color: '#22c55e' }]}>OK</Text></View>
-          <Text style={s.title}>Digital Delta</Text>
-          <Text style={s.sub}>Enter Passcode</Text>
-        </View>
+      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+        {/* Logo */}
+        <Animated.View style={[s.brandWrap, { opacity: fadeAnim }]}>
+          <View style={[s.logoLg, { backgroundColor: colors.status.successMuted }]}>
+            <Text style={[s.logoIcon, { color: colors.status.success }]}>{'\u2713'}</Text>
+          </View>
+          <Text style={s.brandTitle}>Device Registered</Text>
+          <Text style={s.brandSub}>Enter your time-based passcode to authenticate</Text>
+        </Animated.View>
 
-        <View style={s.card}>
+        <Card style={s.regCard}>
+          {/* Current OTP Display */}
           {currentOtp ? (
-            <View style={s.otpBox}>
-              <View style={s.otpHead}>
-                <Text style={s.otpLbl}>YOUR CODE</Text>
-                <View style={[s.timer, otpTimeRemaining <= 5 ? s.tRed : otpTimeRemaining <= 10 ? s.tYel : s.tGrn]}>
-                  <Text style={s.timerTxt}>{otpTimeRemaining}s</Text>
+            <View style={s.otpDisplay}>
+              <View style={s.otpDisplayHeader}>
+                <Text style={s.otpDisplayLabel}>YOUR CURRENT CODE</Text>
+                <View style={[s.timerBadge, { backgroundColor: timerBg }]}>
+                  <View style={[s.timerDot, { backgroundColor: timerColor }]} />
+                  <Text style={[s.timerText, { color: timerColor }]}>{otpTimeRemaining}s</Text>
                 </View>
               </View>
-              <TouchableOpacity onPress={() => setOtpCode(currentOtp)}>
-                <Text style={s.otpBig}>{currentOtp}</Text>
+              <TouchableOpacity onPress={handleAutoFill} activeOpacity={0.7} style={s.otpCodeWrap}>
+                {currentOtp.split('').map((digit, i) => (
+                  <View key={i} style={s.otpDisplayDigit}>
+                    <Text style={s.otpDisplayDigitText}>{digit}</Text>
+                  </View>
+                ))}
               </TouchableOpacity>
-              <View style={s.bar}>
-                <View style={[s.barFill, { flex: 30 - otpTimeRemaining }]} />
+              <View style={s.progressBar}>
+                <View style={[s.progressFill, { flex: 30 - otpTimeRemaining, backgroundColor: timerColor }]} />
                 <View style={{ flex: otpTimeRemaining }} />
               </View>
-              <Text style={s.hint}>Tap code to auto-fill</Text>
+              <Text style={s.otpHint}>Tap code to auto-fill below</Text>
             </View>
           ) : null}
 
-          <Text style={s.label}>Enter 6-digit code</Text>
+          {/* OTP Input - Segmented Boxes */}
+          <Text style={s.fieldLabel}>Enter 6-Digit Code</Text>
+          <View style={s.otpInputWrap}>
+            {otpDigits.map((d, i) => (
+              <View key={i} style={[s.otpInputBox, d ? s.otpInputBoxFilled : null]}>
+                <Text style={[s.otpInputText, d ? s.otpInputTextFilled : null]}>{d || '\u2022'}</Text>
+              </View>
+            ))}
+          </View>
           <TextInput
-            style={[s.input, { fontSize: 24, textAlign: 'center', letterSpacing: 10 }]}
+            style={s.hiddenInput}
             value={otpCode}
-            onChangeText={(t) => setOtpCode(t.replace(/[^0-9]/g, '').slice(0, 6))}
+            onChangeText={handleOtpInput}
             keyboardType="number-pad"
             maxLength={6}
-            placeholder="000000"
-            placeholderTextColor="#6b7280"
+            autoFocus
           />
 
           {error ? <Text style={s.err}>{error}</Text> : null}
 
-          <TouchableOpacity style={[s.primary, otpCode.length !== 6 && { opacity: 0.4 }]} onPress={handleVerify} disabled={isLoading || otpCode.length !== 6}>
-            {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryTxt}>Verify & Login</Text>}
-          </TouchableOpacity>
+          <ActionButton
+            title="Verify & Login"
+            onPress={handleVerify}
+            loading={isLoading}
+            disabled={otpCode.length !== 6}
+            fullWidth
+            size="lg"
+            variant={otpCode.length === 6 ? 'success' : 'primary'}
+            style={{ marginTop: spacing.xl }}
+          />
 
-          <TouchableOpacity onPress={() => setStep('register')}>
+          <TouchableOpacity onPress={() => setStep('register')} style={s.linkWrap}>
             <Text style={s.link}>Register a new device</Text>
           </TouchableOpacity>
-        </View>
+
+          {/* Security Info */}
+          <View style={s.securityInfo}>
+            <Text style={s.securityInfoTitle}>Security Details</Text>
+            <View style={s.securityRow}>
+              <Text style={s.securityDot}>{'\u2713'}</Text>
+              <Text style={s.securityRowText}>Ed25519 keypair generated on device</Text>
+            </View>
+            <View style={s.securityRow}>
+              <Text style={s.securityDot}>{'\u2713'}</Text>
+              <Text style={s.securityRowText}>TOTP per RFC 6238 (30s window)</Text>
+            </View>
+            <View style={s.securityRow}>
+              <Text style={s.securityDot}>{'\u2713'}</Text>
+              <Text style={s.securityRowText}>Keys stored in secure enclave</Text>
+            </View>
+          </View>
+        </Card>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#030712' },
-  content: { padding: 24, paddingTop: 50, justifyContent: 'center' },
-  center: { alignItems: 'center', marginBottom: 28 },
-  logo: { width: 48, height: 48, borderRadius: 12, backgroundColor: 'rgba(37,99,235,0.2)', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  logoT: { fontSize: 18, fontWeight: 'bold', color: '#3b82f6' },
-  title: { fontSize: 26, fontWeight: 'bold', color: '#fff' },
-  sub: { fontSize: 13, color: '#6b7280', marginTop: 4 },
+  safe: { flex: 1, backgroundColor: colors.bg.primary },
+  content: { padding: spacing['2xl'], paddingTop: spacing['3xl'] },
 
-  card: { backgroundColor: '#1f2937', borderWidth: 1, borderColor: '#374151', borderRadius: 16, padding: 24 },
-  cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 16 },
+  // Brand
+  brandWrap: { alignItems: 'center', marginBottom: spacing['2xl'] },
+  logoLg: {
+    width: 72, height: 72, borderRadius: 20,
+    backgroundColor: colors.accent.blueMuted,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: spacing.lg,
+  },
+  logoIcon: { fontSize: 36, fontWeight: '800', color: colors.accent.blue },
+  brandTitle: { ...textStyles.h2, color: colors.text.primary },
+  brandSub: { ...textStyles.bodySmall, color: colors.text.muted, marginTop: spacing.xs, textAlign: 'center' },
+  securityTag: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.bg.elevated, borderRadius: radius.full,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
+    marginTop: spacing.md, gap: spacing.xs,
+  },
+  securityIcon: { fontSize: 12, color: colors.accent.blue },
+  securityText: { fontSize: fontSize.xs, color: colors.text.tertiary },
 
-  label: { fontSize: 13, fontWeight: '600', color: '#d1d5db', marginBottom: 6, marginTop: 12 },
-  input: { backgroundColor: '#111827', borderWidth: 1, borderColor: '#374151', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, color: '#fff', fontSize: 15 },
-  readonly: { backgroundColor: '#111827', borderWidth: 1, borderColor: '#374151', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12 },
-  mono: { color: '#9ca3af', fontSize: 12 },
-  hint: { fontSize: 11, color: '#6b7280', marginTop: 6 },
+  // Card
+  regCard: { padding: spacing['2xl'] },
+  cardTitle: { ...textStyles.h3, color: colors.text.primary, marginBottom: spacing.xs },
+  cardSub: { ...textStyles.bodySmall, color: colors.text.muted, marginBottom: spacing.lg },
 
-  roleWrap: { flexDirection: 'row', flexWrap: 'wrap' },
-  roleBtn: { backgroundColor: '#111827', borderWidth: 1, borderColor: '#374151', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginRight: 8, marginBottom: 8 },
-  roleSel: { backgroundColor: 'rgba(59,130,246,0.15)', borderColor: '#3b82f6' },
-  roleTxt: { color: '#9ca3af', fontSize: 13 },
-  roleSelTxt: { color: '#60a5fa' },
+  // Fields
+  fieldLabel: {
+    fontSize: fontSize.sm, fontWeight: fontWeight.semibold,
+    color: colors.text.secondary, marginBottom: spacing.sm,
+    marginTop: spacing.lg, letterSpacing: 0.3,
+  },
+  input: {
+    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
+    borderRadius: radius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    color: colors.text.primary, fontSize: fontSize.base,
+  },
 
-  err: { color: '#f87171', fontSize: 13, marginVertical: 10, textAlign: 'center' },
-  primary: { backgroundColor: '#2563eb', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 16, marginBottom: 12 },
-  primaryTxt: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  link: { color: '#9ca3af', fontSize: 13, textAlign: 'center', paddingVertical: 6 },
+  // Device ID
+  deviceIdBox: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
+    borderRadius: radius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  deviceIdIcon: { fontSize: 14, color: colors.accent.blue },
+  deviceIdText: { color: colors.text.tertiary, fontSize: fontSize.sm, flex: 1 },
 
-  otpBox: { backgroundColor: '#111827', borderWidth: 1, borderColor: '#374151', borderRadius: 12, padding: 16, marginBottom: 16 },
-  otpHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  otpLbl: { fontSize: 11, color: '#9ca3af', letterSpacing: 1 },
-  timer: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12, borderWidth: 1 },
-  tGrn: { backgroundColor: 'rgba(34,197,94,0.15)', borderColor: '#166534' },
-  tYel: { backgroundColor: 'rgba(245,158,11,0.15)', borderColor: '#92400e' },
-  tRed: { backgroundColor: 'rgba(220,38,38,0.15)', borderColor: '#991b1b' },
-  timerTxt: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  otpBig: { fontSize: 36, fontWeight: 'bold', color: '#fff', letterSpacing: 8 },
-  bar: { height: 4, backgroundColor: '#374151', borderRadius: 2, marginTop: 10, flexDirection: 'row' },
-  barFill: { height: 4, backgroundColor: '#3b82f6', borderRadius: 2 },
+  // Roles
+  rolesGrid: { gap: spacing.sm },
+  roleCard: {
+    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
+    borderRadius: radius.md, padding: spacing.md,
+  },
+  roleCardSelected: {
+    backgroundColor: colors.accent.blueMuted, borderColor: colors.accent.blue,
+  },
+  roleHeader: { flexDirection: 'row', alignItems: 'center' },
+  roleIconWrap: {
+    width: 36, height: 36, borderRadius: radius.sm,
+    backgroundColor: colors.bg.elevated,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  roleIconWrapActive: { backgroundColor: colors.accent.blue },
+  roleIcon: { fontSize: 16, color: colors.text.tertiary },
+  roleIconActive: { color: '#fff' },
+  roleInfo: { flex: 1, marginLeft: spacing.md },
+  roleName: { fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary },
+  roleNameActive: { color: colors.accent.blueLight },
+  roleDesc: { fontSize: fontSize.sm, color: colors.text.muted, marginTop: 2 },
+  roleCheckmark: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: colors.accent.blue,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  roleCheckText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+
+  // Error
+  err: { color: colors.status.error, fontSize: fontSize.md, marginVertical: spacing.md, textAlign: 'center' },
+
+  // Links
+  linkWrap: { paddingVertical: spacing.sm, marginTop: spacing.sm },
+  link: { color: colors.text.muted, fontSize: fontSize.md, textAlign: 'center' },
+
+  // OTP Display
+  otpDisplay: {
+    backgroundColor: colors.bg.card, borderWidth: 1, borderColor: colors.border.default,
+    borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg,
+  },
+  otpDisplayHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  otpDisplayLabel: { fontSize: fontSize.xs, color: colors.text.muted, letterSpacing: 1.5 },
+  timerBadge: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: spacing.sm, paddingVertical: 3,
+    borderRadius: radius.full, gap: spacing.xs,
+  },
+  timerDot: { width: 6, height: 6, borderRadius: 3 },
+  timerText: { fontSize: fontSize.sm, fontWeight: fontWeight.bold },
+  otpCodeWrap: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'center' },
+  otpDisplayDigit: {
+    width: 40, height: 48, borderRadius: radius.sm,
+    backgroundColor: colors.bg.elevated, borderWidth: 1, borderColor: colors.border.default,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  otpDisplayDigitText: { fontSize: fontSize['2xl'], fontWeight: fontWeight.bold, color: colors.text.primary },
+  progressBar: {
+    height: 3, backgroundColor: colors.bg.elevated,
+    borderRadius: 2, marginTop: spacing.md, flexDirection: 'row',
+  },
+  progressFill: { height: 3, borderRadius: 2 },
+  otpHint: { fontSize: fontSize.xs, color: colors.text.muted, textAlign: 'center', marginTop: spacing.sm },
+
+  // OTP Input
+  otpInputWrap: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'center' },
+  otpInputBox: {
+    width: 44, height: 52, borderRadius: radius.md,
+    backgroundColor: colors.bg.card, borderWidth: 1.5, borderColor: colors.border.default,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  otpInputBoxFilled: { borderColor: colors.accent.blue, backgroundColor: colors.accent.blueMuted },
+  otpInputText: { fontSize: fontSize.xl, color: colors.text.muted },
+  otpInputTextFilled: { fontSize: fontSize['2xl'], fontWeight: fontWeight.bold, color: colors.text.primary },
+  hiddenInput: { position: 'absolute', opacity: 0, height: 0 },
+
+  // Generating step
+  generatingWrap: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    padding: spacing['2xl'],
+  },
+  genTitle: { ...textStyles.h3, color: colors.text.primary, marginTop: spacing.xl, marginBottom: spacing['2xl'] },
+  genSteps: { gap: spacing.lg, width: '100%', maxWidth: 300 },
+  genStep: { flexDirection: 'row', alignItems: 'center' },
+  genCheck: { color: colors.status.success, fontSize: 18, fontWeight: '700', marginRight: spacing.md, width: 24 },
+  genStepText: { ...textStyles.body, color: colors.text.secondary },
+  genHint: { ...textStyles.caption, color: colors.text.muted, marginTop: spacing['2xl'] },
+
+  // Security Info
+  securityInfo: {
+    marginTop: spacing.xl, paddingTop: spacing.lg,
+    borderTopWidth: 1, borderTopColor: colors.border.default,
+  },
+  securityInfoTitle: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: colors.text.tertiary, marginBottom: spacing.md },
+  securityRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+  securityDot: { color: colors.status.success, fontSize: 12, marginRight: spacing.sm },
+  securityRowText: { fontSize: fontSize.sm, color: colors.text.muted },
 });

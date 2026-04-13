@@ -1,44 +1,66 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    Alert,
-    Clipboard,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Clipboard,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { api } from '../lib/api';
 import { useAuthStore } from '../lib/useAuthStore';
 import { useSupplyStore } from '../lib/useSupplyStore';
+import { Card } from '../components/Card';
+import { ActionButton } from '../components/ActionButton';
+import { StatusBadge } from '../components/StatusBadge';
+import { PriorityBadge } from '../components/PriorityBadge';
+import { StatCard } from '../components/StatCard';
+import { InfoRow } from '../components/InfoRow';
+import { OnlineIndicator } from '../components/OnlineIndicator';
+import { EmptyState } from '../components/EmptyState';
+import { ChipSelector } from '../components/ChipSelector';
+import { colors } from '../theme/colors';
+import { textStyles, fontSize, fontWeight } from '../theme/typography';
+import { spacing, radius } from '../theme/spacing';
 import ConflictModal from './ConflictModal';
+
+const CATEGORIES = [
+  { key: 'water', label: 'Water' },
+  { key: 'food', label: 'Food' },
+  { key: 'medical', label: 'Medical' },
+  { key: 'equipment', label: 'Equipment' },
+  { key: 'shelter', label: 'Shelter' },
+];
+
+const PRIORITIES = [
+  { key: 'P0', label: 'P0', color: colors.priority.p0 },
+  { key: 'P1', label: 'P1', color: colors.priority.p1 },
+  { key: 'P2', label: 'P2', color: colors.priority.p2 },
+  { key: 'P3', label: 'P3', color: colors.priority.p3 },
+];
 
 export default function DashboardScreen({ navigation }: any) {
   const { user, logout, resetDevice, token, deviceId } = useAuthStore();
   const isOnline = useOnlineStatus();
   const {
-    supplies,
-    pendingCount,
-    syncStatus,
-    lastSyncAt,
-    conflicts,
-    pendingConflicts,
-    loadSupplies,
-    createSupply,
-    updateSupply,
-    syncWithServer,
-    resolveConflict,
-    dismissConflicts,
+    supplies, pendingCount, syncStatus, lastSyncAt,
+    conflicts, pendingConflicts,
+    loadSupplies, createSupply, updateSupply,
+    syncWithServer, resolveConflict, dismissConflicts,
   } = useSupplyStore();
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // New supply form state
   const [newName, setNewName] = useState('');
@@ -46,17 +68,13 @@ export default function DashboardScreen({ navigation }: any) {
   const [newQty, setNewQty] = useState('');
   const [newPriority, setNewPriority] = useState('P2');
 
-  // Load supplies on mount
-  useEffect(() => {
-    loadSupplies();
-  }, []);
+  useEffect(() => { loadSupplies(); }, []);
 
-  // WebSocket — auto-refresh when other devices push changes
+  // WebSocket auto-refresh
   useEffect(() => {
     const apiUrl = api.getBaseUrl() || '';
     const wsUrl = apiUrl.replace(/^http/, 'ws').replace(/\/api\/v1$/, '');
     if (!wsUrl) return;
-
     let ws: WebSocket | null = null;
     try {
       ws = new WebSocket(wsUrl);
@@ -70,28 +88,20 @@ export default function DashboardScreen({ navigation }: any) {
       };
       ws.onerror = () => {};
     } catch {}
-
     return () => { try { ws?.close(); } catch {} };
   }, []);
 
-  // Auto-sync when coming back online
+  // Auto-sync on reconnect
   const [wasOffline, setWasOffline] = useState(false);
   useEffect(() => {
-    if (!isOnline) {
-      setWasOffline(true);
-    } else if (wasOffline && isOnline) {
-      setWasOffline(false);
-      syncWithServer();
-    }
+    if (!isOnline) { setWasOffline(true); }
+    else if (wasOffline && isOnline) { setWasOffline(false); syncWithServer(); }
   }, [isOnline]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    if (isOnline) {
-      await syncWithServer();
-    } else {
-      await loadSupplies();
-    }
+    if (isOnline) await syncWithServer();
+    else await loadSupplies();
     setRefreshing(false);
   }, [isOnline]);
 
@@ -108,17 +118,14 @@ export default function DashboardScreen({ navigation }: any) {
       priority: newPriority as any,
       nodeId: null,
     });
-    setNewName('');
-    setNewQty('');
-    setShowAddForm(false);
+    setNewName(''); setNewQty(''); setShowAddForm(false);
   };
 
   const handleUpdateQty = async (id: string) => {
     const qty = parseInt(editQty, 10);
     if (isNaN(qty)) return;
     await updateSupply(id, { quantity: qty });
-    setEditingId(null);
-    setEditQty('');
+    setEditingId(null); setEditQty('');
   };
 
   const handleLogout = async () => {
@@ -129,224 +136,259 @@ export default function DashboardScreen({ navigation }: any) {
   const handleResetDevice = () => {
     Alert.alert(
       'Reset Device',
-      'This will delete ALL device data (keys, TOTP, identity). You will need to re-register as a new device. Continue?',
+      'This will delete ALL device data (keys, TOTP, identity). You will need to re-register. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            await resetDevice();
-            navigation.replace('Login');
-          },
-        },
+        { text: 'Reset', style: 'destructive', onPress: async () => { await resetDevice(); navigation.replace('Login'); } },
       ],
     );
   };
 
+  // Group supplies by category
+  const filteredSupplies = supplies.filter((s) =>
+    !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.category.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const groupedSupplies = filteredSupplies.reduce<Record<string, typeof supplies>>((acc, s) => {
+    const cat = s.category || 'other';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(s);
+    return acc;
+  }, {});
+
+  const syncColor = syncStatus === 'synced' ? colors.status.success : syncStatus === 'error' ? colors.status.error : syncStatus === 'syncing' ? colors.accent.blue : colors.text.muted;
+  const syncLabel = syncStatus === 'syncing' ? 'Syncing...' : syncStatus === 'synced' ? 'Synced' : syncStatus === 'error' ? 'Error' : 'Idle';
+
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView style={s.safe} edges={['top']}>
       <ScrollView
         contentContainerStyle={s.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3b82f6" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent.blue} />}
+        showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View style={s.headerRow}>
-          <View>
-            <Text style={s.title}>Digital Delta</Text>
-            <Text style={s.sub}>Disaster relief operations</Text>
+        <View style={s.header}>
+          <View style={s.headerLeft}>
+            <View style={s.logoSmall}>
+              <Text style={s.logoSmallText}>{'\u0394'}</Text>
+            </View>
+            <View>
+              <Text style={s.headerTitle}>Digital Delta</Text>
+              <Text style={s.headerSub}>
+                {user?.name || 'Operator'} {'\u2022'} {user?.role || 'unknown'}
+              </Text>
+            </View>
           </View>
-          <View style={[s.badge, isOnline ? s.badgeOnline : s.badgeOffline]}>
-            <View style={[s.dot, { backgroundColor: isOnline ? '#22c55e' : '#ef4444' }]} />
-            <Text style={[s.badgeTxt, { color: isOnline ? '#22c55e' : '#ef4444' }]}>
-              {isOnline ? 'Online' : 'Offline'}
-            </Text>
+          <View style={s.headerRight}>
+            <OnlineIndicator isOnline={isOnline} />
+            <TouchableOpacity onPress={() => setShowSettings(true)} style={s.settingsBtn}>
+              <Text style={s.settingsIcon}>{'\u2699'}</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Connection Status — show when offline so user knows why */}
+        {/* Sync Status Bar */}
+        <View style={s.syncBar}>
+          <View style={s.syncBarLeft}>
+            <View style={[s.syncDot, { backgroundColor: syncColor }]} />
+            <Text style={[s.syncText, { color: syncColor }]}>{syncLabel}</Text>
+            {lastSyncAt && <Text style={s.syncTime}>{'\u2022'} {new Date(lastSyncAt).toLocaleTimeString()}</Text>}
+          </View>
+          <View style={s.syncBarRight}>
+            {pendingCount > 0 && (
+              <StatusBadge label={`${pendingCount} pending`} color={colors.status.warning} size="sm" />
+            )}
+            <TouchableOpacity onPress={syncWithServer} disabled={syncStatus === 'syncing'} style={s.syncNowBtn}>
+              <Text style={s.syncNowText}>{syncStatus === 'syncing' ? '...' : 'Sync'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Offline Alert */}
         {!isOnline && (
-          <OfflineCard navigation={navigation} />
+          <Card style={s.offlineCard} variant="accent" accentColor={colors.status.error}>
+            <View style={s.offlineContent}>
+              <Text style={s.offlineTitle}>No Server Connection</Text>
+              <Text style={s.offlineMsg}>Operating in offline mode. Data syncs automatically when connection is restored.</Text>
+              <ActionButton
+                title="QR Pair & LAN Setup"
+                onPress={() => navigation.replace('qr-pair')}
+                variant="outline"
+                size="sm"
+                style={{ marginTop: spacing.md, alignSelf: 'flex-start' }}
+              />
+            </View>
+          </Card>
         )}
 
-        {/* Identity Card */}
-        {user ? (
-          <View style={s.card}>
-            <Text style={s.cardH}>IDENTITY</Text>
-            <Row label="Name" value={user.name || user.deviceId} />
-            <Row label="Role" value={user.role} />
-            <Row label="Auth" value={token ? 'JWT (online)' : 'TOTP (offline)'} color={token ? '#22c55e' : '#f59e0b'} />
-            <TouchableOpacity onPress={() => {
-              if (deviceId) {
-                Clipboard.setString(deviceId);
-                Alert.alert('Copied', 'Device ID copied to clipboard');
-              }
-            }}>
-              <View style={s.stateRow}>
-                <Text style={s.stateLabel}>Device</Text>
-                <Text style={[s.stateValue, { color: '#60a5fa', textDecorationLine: 'underline' }]} numberOfLines={1}>{deviceId || 'none'}</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
-        {/* Sync Status */}
-        <View style={s.card}>
-          <Text style={s.cardH}>SYNC STATUS</Text>
-          <Row
-            label="Status"
-            value={syncStatus === 'syncing' ? 'Syncing...' : syncStatus === 'synced' ? 'Synced' : syncStatus === 'error' ? 'Error' : 'Idle'}
-            color={syncStatus === 'synced' ? '#22c55e' : syncStatus === 'error' ? '#ef4444' : syncStatus === 'syncing' ? '#3b82f6' : '#9ca3af'}
+        {/* Quick Stats */}
+        <View style={s.statsRow}>
+          <StatCard value={supplies.length} label="Supplies" color={colors.accent.blue} />
+          <View style={{ width: spacing.sm }} />
+          <StatCard value={pendingCount} label="Pending" color={pendingCount > 0 ? colors.status.warning : colors.text.muted} />
+          <View style={{ width: spacing.sm }} />
+          <StatCard
+            value={conflicts.length}
+            label="Conflicts"
+            color={conflicts.length > 0 ? colors.module.auth : colors.text.muted}
           />
-          <Row label="Pending" value={`${pendingCount} changes`} color={pendingCount > 0 ? '#f59e0b' : '#9ca3af'} />
-          {lastSyncAt && <Row label="Last sync" value={new Date(lastSyncAt).toLocaleTimeString()} />}
-          {conflicts.length > 0 && (
-            <Row label="Conflicts" value={`${conflicts.length} resolved`} color="#a855f7" />
-          )}
-
-          <TouchableOpacity
-            style={[s.syncBtn, syncStatus === 'syncing' && s.syncBtnDisabled]}
-            onPress={syncWithServer}
-            disabled={syncStatus === 'syncing'}
-          >
-            <Text style={s.syncBtnText}>
-              {syncStatus === 'syncing' ? 'Syncing...' : isOnline ? 'Sync Now' : 'Sync Now (try LAN)'}
-            </Text>
-          </TouchableOpacity>
         </View>
 
-        {/* Stats */}
-        <View style={s.row}>
-          <StatTile label="Supplies" value={supplies.length} />
-          <StatTile label="Pending" value={pendingCount} />
-        </View>
-
-        {/* Add Supply Button */}
-        <TouchableOpacity style={s.addBtn} onPress={() => setShowAddForm(!showAddForm)}>
-          <Text style={s.addBtnText}>{showAddForm ? 'Cancel' : '+ Add Supply'}</Text>
-        </TouchableOpacity>
-
-        {/* Add Supply Form */}
-        {showAddForm && (
-          <View style={s.card}>
-            <Text style={s.cardH}>NEW SUPPLY</Text>
-            <TextInput style={s.input} placeholder="Name" placeholderTextColor="#6b7280" value={newName} onChangeText={setNewName} />
-            <TextInput style={s.input} placeholder="Quantity" placeholderTextColor="#6b7280" value={newQty} onChangeText={setNewQty} keyboardType="numeric" />
-            <View style={s.chipRow}>
-              {(['water', 'food', 'medical', 'equipment', 'shelter'] as const).map((cat) => (
-                <TouchableOpacity key={cat} style={[s.chip, newCategory === cat && s.chipActive]} onPress={() => setNewCategory(cat)}>
-                  <Text style={[s.chipText, newCategory === cat && s.chipTextActive]}>{cat}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <View style={s.chipRow}>
-              {(['P0', 'P1', 'P2', 'P3'] as const).map((p) => (
-                <TouchableOpacity key={p} style={[s.chip, newPriority === p && s.chipActive]} onPress={() => setNewPriority(p)}>
-                  <Text style={[s.chipText, newPriority === p && s.chipTextActive]}>{p}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity style={s.submitBtn} onPress={handleAddSupply}>
-              <Text style={s.submitBtnText}>Create Supply</Text>
-            </TouchableOpacity>
+        {/* Search + Add */}
+        <View style={s.actionBar}>
+          <View style={s.searchWrap}>
+            <Text style={s.searchIcon}>{'\u2315'}</Text>
+            <TextInput
+              style={s.searchInput}
+              placeholder="Search supplies..."
+              placeholderTextColor={colors.text.muted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
           </View>
-        )}
+          <ActionButton
+            title="+ Add"
+            onPress={() => setShowAddForm(true)}
+            variant="success"
+            size="sm"
+          />
+        </View>
 
-        {/* Supply List */}
-        {supplies.length > 0 && (
-          <View style={{ marginTop: 8 }}>
-            <Text style={[s.cardH, { marginBottom: 8 }]}>SUPPLIES ({supplies.length})</Text>
-            {supplies.map((supply) => (
-              <View key={supply.id} style={s.supplyCard}>
-                <View style={s.supplyHeader}>
-                  <Text style={s.supplyName}>{supply.name}</Text>
-                  <View style={[s.priorityBadge, priorityColor(supply.priority)]}>
-                    <Text style={s.priorityText}>{supply.priority}</Text>
-                  </View>
-                </View>
-                <View style={s.supplyBody}>
-                  <Text style={s.supplyDetail}>{supply.category}</Text>
-                  <Text style={s.supplySep}>|</Text>
-                  {editingId === supply.id ? (
-                    <View style={s.editRow}>
-                      <TextInput
-                        style={s.editInput}
-                        value={editQty}
-                        onChangeText={setEditQty}
-                        keyboardType="numeric"
-                        autoFocus
-                      />
-                      <TouchableOpacity onPress={() => handleUpdateQty(supply.id)}>
-                        <Text style={s.editSave}>Save</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => setEditingId(null)}>
-                        <Text style={s.editCancel}>X</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setEditingId(supply.id);
-                        setEditQty(String(supply.quantity));
-                      }}
-                    >
-                      <Text style={s.supplyQty}>
-                        {supply.quantity} {supply.unit}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+        {/* Supply List by Category */}
+        {Object.keys(groupedSupplies).length > 0 ? (
+          Object.entries(groupedSupplies).map(([category, items]) => (
+            <View key={category} style={s.categorySection}>
+              <View style={s.categoryHeader}>
+                <Text style={s.categoryLabel}>{category.toUpperCase()}</Text>
+                <Text style={s.categoryCount}>{items.length}</Text>
               </View>
-            ))}
-          </View>
+              {items.map((supply) => (
+                <Card key={supply.id} style={s.supplyCard}>
+                  <View style={s.supplyRow}>
+                    <View style={s.supplyInfo}>
+                      <View style={s.supplyNameRow}>
+                        <Text style={s.supplyName}>{supply.name}</Text>
+                        <PriorityBadge priority={supply.priority} />
+                      </View>
+                      <View style={s.supplyMeta}>
+                        {editingId === supply.id ? (
+                          <View style={s.editRow}>
+                            <TextInput
+                              style={s.editInput}
+                              value={editQty}
+                              onChangeText={setEditQty}
+                              keyboardType="numeric"
+                              autoFocus
+                            />
+                            <TouchableOpacity onPress={() => handleUpdateQty(supply.id)}>
+                              <Text style={s.editSave}>{'\u2713'}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setEditingId(null)}>
+                              <Text style={s.editCancel}>{'\u2717'}</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : (
+                          <TouchableOpacity
+                            onPress={() => { setEditingId(supply.id); setEditQty(String(supply.quantity)); }}
+                            style={s.qtyWrap}
+                          >
+                            <Text style={s.supplyQty}>{supply.quantity}</Text>
+                            <Text style={s.supplyUnit}>{supply.unit}</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                </Card>
+              ))}
+            </View>
+          ))
+        ) : (
+          <EmptyState
+            title="No supplies found"
+            message={searchQuery ? 'Try a different search term' : 'Add supplies or sync with the server to get started'}
+          />
         )}
 
-        {supplies.length === 0 && (
-          <View style={s.empty}>
-            <Text style={s.emptyText}>No supplies yet. Add one or sync with the server.</Text>
-          </View>
-        )}
-
-        {/* P2P Sync */}
-        <TouchableOpacity style={s.p2pBtn} onPress={() => navigation.replace('p2p')}>
-          <Text style={s.p2pBtnText}>P2P Device Sync</Text>
-        </TouchableOpacity>
-
-        {/* Mesh Network */}
-        <TouchableOpacity style={s.meshBtn} onPress={() => navigation.replace('mesh')}>
-          <Text style={s.meshBtnText}>Mesh Network</Text>
-        </TouchableOpacity>
-
-        {/* QR Pair / LAN Setup */}
-        <TouchableOpacity style={s.qrPairBtn} onPress={() => navigation.replace('qr-pair')}>
-          <Text style={s.qrPairBtnText}>QR Pair & LAN Setup</Text>
-        </TouchableOpacity>
-
-        {/* Route Map */}
-        <TouchableOpacity style={s.routeBtn} onPress={() => navigation.replace('routes')}>
-          <Text style={s.routeBtnText}>Route Map</Text>
-        </TouchableOpacity>
-
-        {/* Deliveries & PoD */}
-        <TouchableOpacity style={s.deliveryBtn} onPress={() => navigation.replace('delivery')}>
-          <Text style={s.deliveryBtnText}>Deliveries & PoD</Text>
-        </TouchableOpacity>
-
-        {/* M6: Triage Engine */}
-        <TouchableOpacity style={s.triageBtn} onPress={() => navigation.replace('triage')}>
-          <Text style={s.triageBtnText}>Triage Engine</Text>
-        </TouchableOpacity>
-
-        {/* Logout */}
-        <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
-          <Text style={s.logoutText}>Logout</Text>
-        </TouchableOpacity>
-
-        {/* Reset Device */}
-        <TouchableOpacity style={s.resetBtn} onPress={handleResetDevice}>
-          <Text style={s.resetText}>Reset Device (Re-register)</Text>
-        </TouchableOpacity>
+        <View style={{ height: spacing['2xl'] }} />
       </ScrollView>
+
+      {/* Settings Modal */}
+      <Modal visible={showSettings} transparent animationType="slide">
+        <View style={s.modalOverlay}>
+          <View style={s.modalSheet}>
+            <View style={s.modalHandle} />
+            <Text style={s.modalTitle}>Settings</Text>
+            {user && (
+              <>
+                <InfoRow label="Name" value={user.name || user.deviceId} />
+                <InfoRow label="Role" value={user.role} />
+                <InfoRow label="Auth" value={token ? 'JWT (online)' : 'TOTP (offline)'} valueColor={token ? colors.status.success : colors.status.warning} />
+                <TouchableOpacity onPress={() => {
+                  if (deviceId) { Clipboard.setString(deviceId); Alert.alert('Copied', 'Device ID copied'); }
+                }}>
+                  <InfoRow label="Device ID" value={deviceId || 'none'} valueColor={colors.accent.blueLight} />
+                </TouchableOpacity>
+              </>
+            )}
+            <View style={s.settingsBtns}>
+              <ActionButton title="Logout" onPress={handleLogout} variant="secondary" size="sm" style={{ flex: 1 }} />
+              <View style={{ width: spacing.sm }} />
+              <ActionButton title="Reset Device" onPress={handleResetDevice} variant="destructive" size="sm" style={{ flex: 1 }} />
+            </View>
+            <ActionButton title="Close" onPress={() => setShowSettings(false)} variant="ghost" style={{ marginTop: spacing.md }} />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add Supply Modal */}
+      <Modal visible={showAddForm} transparent animationType="slide">
+        <View style={s.modalOverlay}>
+          <View style={s.modalSheet}>
+            <View style={s.modalHandle} />
+            <Text style={s.modalTitle}>Add New Supply</Text>
+
+            <Text style={s.fieldLabel}>Name</Text>
+            <TextInput
+              style={s.input}
+              placeholder="Supply name"
+              placeholderTextColor={colors.text.muted}
+              value={newName}
+              onChangeText={setNewName}
+            />
+
+            <Text style={s.fieldLabel}>Quantity</Text>
+            <TextInput
+              style={s.input}
+              placeholder="0"
+              placeholderTextColor={colors.text.muted}
+              value={newQty}
+              onChangeText={setNewQty}
+              keyboardType="numeric"
+            />
+
+            <Text style={s.fieldLabel}>Category</Text>
+            <ChipSelector
+              options={CATEGORIES}
+              selected={newCategory}
+              onSelect={setNewCategory}
+              accentColor={colors.module.sync}
+            />
+
+            <Text style={s.fieldLabel}>Priority</Text>
+            <ChipSelector
+              options={PRIORITIES}
+              selected={newPriority}
+              onSelect={setNewPriority}
+            />
+
+            <View style={s.modalActions}>
+              <ActionButton title="Cancel" onPress={() => setShowAddForm(false)} variant="ghost" style={{ flex: 1 }} />
+              <ActionButton title="Create Supply" onPress={handleAddSupply} variant="primary" style={{ flex: 2 }} />
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* M2.3: Conflict Resolution Modal */}
       <ConflictModal
@@ -359,166 +401,134 @@ export default function DashboardScreen({ navigation }: any) {
   );
 }
 
-function OfflineCard({ navigation }: { navigation: any }) {
-  const [fallbackUrl, setFallbackUrl] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    api.getSavedFallbackUrl().then(setFallbackUrl);
-  }, []);
-
-  const switchToFallback = async () => {
-    if (fallbackUrl) {
-      await api.saveBaseUrl(fallbackUrl);
-      Alert.alert('Switched', `Now connecting to: ${fallbackUrl}`);
-    }
-  };
-
-  return (
-    <View style={[s.card, { borderColor: '#ef4444' }]}>
-      <Text style={s.cardH}>NO SERVER CONNECTION</Text>
-      <Row label="Trying" value={api.getBaseUrl()} color="#ef4444" />
-      <Text style={{ color: '#9ca3af', fontSize: 12, marginTop: 6, lineHeight: 18 }}>
-        Server not reachable. You can:{'\n'}
-        • Start your laptop server (npm start){'\n'}
-        • Start Hub Mode on a phone{'\n'}
-        • Connect to another phone's Hub
-      </Text>
-
-      {/* {fallbackUrl && fallbackUrl !== api.getBaseUrl() && (
-        <TouchableOpacity
-          style={{ backgroundColor: '#065f46', borderRadius: 10, padding: 12, alignItems: 'center', marginTop: 10 }}
-          onPress={switchToFallback}
-        >
-          <Text style={{ color: '#6ee7b7', fontSize: 13, fontWeight: '600' }}>
-            Switch to last Hub: {fallbackUrl}
-          </Text>
-        </TouchableOpacity>
-      )} */}
-
-      <TouchableOpacity
-        style={{ backgroundColor: '#713f12', borderRadius: 10, padding: 12, alignItems: 'center', marginTop: 8 }}
-        onPress={() => navigation.replace('qr-pair')}
-      >
-        <Text style={{ color: '#fbbf24', fontSize: 14, fontWeight: '600' }}>QR Pair & LAN Setup</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function Row({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <View style={s.stateRow}>
-      <Text style={s.stateLabel}>{label}</Text>
-      <Text style={[s.stateValue, color ? { color } : undefined]} numberOfLines={1}>{value}</Text>
-    </View>
-  );
-}
-
-function StatTile({ label, value }: { label: string; value: number }) {
-  return (
-    <View style={s.stat}>
-      <Text style={s.statNum}>{value}</Text>
-      <Text style={s.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function priorityColor(p: string): { backgroundColor: string; borderColor: string } {
-  switch (p) {
-    case 'P0': return { backgroundColor: 'rgba(239,68,68,0.15)', borderColor: '#dc2626' };
-    case 'P1': return { backgroundColor: 'rgba(249,115,22,0.15)', borderColor: '#ea580c' };
-    case 'P2': return { backgroundColor: 'rgba(59,130,246,0.15)', borderColor: '#2563eb' };
-    default: return { backgroundColor: 'rgba(156,163,175,0.15)', borderColor: '#6b7280' };
-  }
-}
-
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#030712' },
-  content: { padding: 20, paddingTop: 16 },
+  safe: { flex: 1, backgroundColor: colors.bg.primary },
+  content: { padding: spacing.lg, paddingTop: spacing.sm },
 
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
-  sub: { fontSize: 13, color: '#9ca3af', marginTop: 2 },
+  // Header
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  logoSmall: {
+    width: 40, height: 40, borderRadius: radius.md,
+    backgroundColor: colors.accent.blueMuted,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  logoSmallText: { fontSize: 20, fontWeight: '800', color: colors.accent.blue },
+  headerTitle: { ...textStyles.h4, color: colors.text.primary },
+  headerSub: { fontSize: fontSize.sm, color: colors.text.muted, marginTop: 1 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  settingsBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: colors.bg.elevated,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  settingsIcon: { fontSize: 18, color: colors.text.tertiary },
 
-  badge: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, marginTop: 4 },
-  badgeOnline: { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: '#166534' },
-  badgeOffline: { backgroundColor: 'rgba(239,68,68,0.12)', borderColor: '#991b1b' },
-  dot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
-  badgeTxt: { fontSize: 12, fontWeight: '600' },
+  // Sync Bar
+  syncBar: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: colors.bg.card, borderRadius: radius.md,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.border.default,
+  },
+  syncBarLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  syncDot: { width: 6, height: 6, borderRadius: 3 },
+  syncText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  syncTime: { fontSize: fontSize.xs, color: colors.text.muted },
+  syncBarRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  syncNowBtn: {
+    backgroundColor: colors.accent.blueMuted, borderRadius: radius.sm,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
+  },
+  syncNowText: { color: colors.accent.blue, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
 
-  card: { backgroundColor: '#111827', borderWidth: 1, borderColor: '#374151', borderRadius: 14, padding: 16, marginBottom: 16 },
-  cardH: { fontSize: 11, fontWeight: 'bold', color: '#9ca3af', letterSpacing: 1, marginBottom: 10 },
+  // Offline
+  offlineCard: { marginBottom: spacing.lg },
+  offlineContent: { gap: spacing.xs },
+  offlineTitle: { ...textStyles.h4, color: colors.status.error },
+  offlineMsg: { fontSize: fontSize.sm, color: colors.text.muted, lineHeight: 18 },
 
-  stateRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  stateLabel: { fontSize: 13, color: '#6b7280' },
-  stateValue: { fontSize: 13, color: '#d1d5db', flex: 1, textAlign: 'right' },
+  // Stats
+  statsRow: { flexDirection: 'row', marginBottom: spacing.lg },
 
-  row: { flexDirection: 'row', marginBottom: 12 },
-  stat: { flex: 1, backgroundColor: '#111827', borderRadius: 14, padding: 16, marginRight: 12, borderWidth: 1, borderColor: '#374151' },
-  statNum: { fontSize: 28, fontWeight: 'bold', color: '#fff' },
-  statLabel: { fontSize: 13, color: '#9ca3af', marginTop: 2 },
+  // Search + Action bar
+  actionBar: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg, alignItems: 'center' },
+  searchWrap: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.bg.card, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border.default,
+    paddingHorizontal: spacing.md,
+  },
+  searchIcon: { fontSize: 16, color: colors.text.muted, marginRight: spacing.sm },
+  searchInput: { flex: 1, color: colors.text.primary, fontSize: fontSize.base, paddingVertical: spacing.sm },
 
-  // Sync button
-  syncBtn: { backgroundColor: '#1e40af', borderRadius: 10, padding: 12, alignItems: 'center', marginTop: 12 },
-  syncBtnDisabled: { backgroundColor: '#374151', opacity: 0.5 },
-  syncBtnText: { color: '#93c5fd', fontSize: 14, fontWeight: '600' },
+  // Category sections
+  categorySection: { marginBottom: spacing.lg },
+  categoryHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: spacing.sm, paddingHorizontal: spacing.xs,
+  },
+  categoryLabel: {
+    fontSize: fontSize.xs, fontWeight: fontWeight.bold,
+    color: colors.text.muted, letterSpacing: 1.5,
+  },
+  categoryCount: {
+    fontSize: fontSize.xs, color: colors.text.muted,
+    backgroundColor: colors.bg.elevated, paddingHorizontal: spacing.sm,
+    paddingVertical: 2, borderRadius: radius.sm, overflow: 'hidden',
+  },
 
-  // Add button
-  addBtn: { backgroundColor: '#065f46', borderRadius: 12, padding: 14, alignItems: 'center', marginBottom: 12 },
-  addBtnText: { color: '#6ee7b7', fontSize: 14, fontWeight: '600' },
-
-  // Form
-  input: { backgroundColor: '#1f2937', borderWidth: 1, borderColor: '#374151', borderRadius: 10, padding: 12, color: '#fff', fontSize: 14, marginBottom: 10 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10, gap: 6 },
-  chip: { borderWidth: 1, borderColor: '#374151', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  chipActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.15)' },
-  chipText: { color: '#9ca3af', fontSize: 12 },
-  chipTextActive: { color: '#93c5fd' },
-  submitBtn: { backgroundColor: '#1e40af', borderRadius: 10, padding: 12, alignItems: 'center' },
-  submitBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-
-  // Supply list
-  supplyCard: { backgroundColor: '#111827', borderWidth: 1, borderColor: '#374151', borderRadius: 12, padding: 14, marginBottom: 10 },
-  supplyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  supplyName: { color: '#f3f4f6', fontSize: 15, fontWeight: '600', flex: 1 },
-  priorityBadge: { borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
-  priorityText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
-  supplyBody: { flexDirection: 'row', alignItems: 'center' },
-  supplyDetail: { color: '#9ca3af', fontSize: 13 },
-  supplySep: { color: '#4b5563', marginHorizontal: 8 },
-  supplyQty: { color: '#60a5fa', fontSize: 13, fontWeight: '600', textDecorationLine: 'underline' },
+  // Supply cards
+  supplyCard: { marginBottom: spacing.sm, padding: spacing.md },
+  supplyRow: { flexDirection: 'row', alignItems: 'center' },
+  supplyInfo: { flex: 1 },
+  supplyNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.xs },
+  supplyName: { fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text.primary, flex: 1 },
+  supplyMeta: { flexDirection: 'row', alignItems: 'center' },
+  qtyWrap: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.xs },
+  supplyQty: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.accent.blueLight },
+  supplyUnit: { fontSize: fontSize.sm, color: colors.text.muted },
 
   // Edit inline
-  editRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  editInput: { backgroundColor: '#1f2937', borderWidth: 1, borderColor: '#3b82f6', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, color: '#fff', width: 70, fontSize: 13 },
-  editSave: { color: '#22c55e', fontSize: 13, fontWeight: '600' },
-  editCancel: { color: '#ef4444', fontSize: 13, fontWeight: '600' },
+  editRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  editInput: {
+    backgroundColor: colors.bg.elevated, borderWidth: 1, borderColor: colors.accent.blue,
+    borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs,
+    color: colors.text.primary, width: 70, fontSize: fontSize.base,
+  },
+  editSave: { color: colors.status.success, fontSize: 18, fontWeight: '700' },
+  editCancel: { color: colors.status.error, fontSize: 18, fontWeight: '700' },
 
-  // Empty
-  empty: { alignItems: 'center', paddingVertical: 30 },
-  emptyText: { color: '#6b7280', fontSize: 14 },
+  // Settings
+  settingsBtns: { flexDirection: 'row', marginTop: spacing.lg },
 
-  p2pBtn: { backgroundColor: '#4c1d95', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 16 },
-  p2pBtnText: { color: '#c4b5fd', fontSize: 14, fontWeight: '600' },
+  // Modal
+  modalOverlay: {
+    flex: 1, backgroundColor: colors.bg.overlay,
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: colors.bg.card,
+    borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
+    padding: spacing['2xl'], paddingBottom: spacing['4xl'],
+    borderWidth: 1, borderColor: colors.border.default,
+  },
+  modalHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: colors.border.light,
+    alignSelf: 'center', marginBottom: spacing.xl,
+  },
+  modalTitle: { ...textStyles.h3, color: colors.text.primary, marginBottom: spacing.lg },
+  modalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl },
 
-  meshBtn: { backgroundColor: '#065f46', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
-  meshBtnText: { color: '#6ee7b7', fontSize: 14, fontWeight: '600' },
-
-  qrPairBtn: { backgroundColor: '#713f12', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
-  qrPairBtnText: { color: '#fbbf24', fontSize: 14, fontWeight: '600' },
-
-  routeBtn: { backgroundColor: '#1e3a5f', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
-  routeBtnText: { color: '#93c5fd', fontSize: 14, fontWeight: '600' },
-
-  deliveryBtn: { backgroundColor: '#78350f', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
-  deliveryBtnText: { color: '#fbbf24', fontSize: 14, fontWeight: '600' },
-
-  triageBtn: { backgroundColor: '#7f1d1d', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
-  triageBtnText: { color: '#fca5a5', fontSize: 14, fontWeight: '600' },
-
-  logoutBtn: { backgroundColor: '#7f1d1d', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
-  logoutText: { color: '#fca5a5', fontSize: 14, fontWeight: '600' },
-
-  resetBtn: { backgroundColor: '#451a03', borderWidth: 1, borderColor: '#92400e', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8, marginBottom: 30 },
-  resetText: { color: '#fbbf24', fontSize: 13, fontWeight: '600' },
+  // Form fields
+  fieldLabel: {
+    fontSize: fontSize.sm, fontWeight: fontWeight.semibold,
+    color: colors.text.secondary, marginBottom: spacing.sm, marginTop: spacing.md,
+  },
+  input: {
+    backgroundColor: colors.bg.elevated, borderWidth: 1, borderColor: colors.border.default,
+    borderRadius: radius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    color: colors.text.primary, fontSize: fontSize.base,
+  },
 });

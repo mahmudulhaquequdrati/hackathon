@@ -97,6 +97,20 @@ router.post('/:id/pod', requirePermission('pod_receipts', 'write'), (req, res) =
   }
 });
 
+// DELETE /api/v1/delivery/:id — delete a delivery and its PoD receipts
+router.delete('/:id', requirePermission('deliveries', 'write'), (req, res) => {
+  try {
+    deliveryService.deleteDelivery(req.params.id);
+
+    if (req.broadcast) req.broadcast('DELIVERY_DELETED', { id: req.params.id });
+
+    res.json({ data: { deleted: true } });
+  } catch (err) {
+    const status = err.message.startsWith('Delivery not found') ? 400 : 500;
+    res.status(status).json({ error: err.message });
+  }
+});
+
 // GET /api/v1/delivery/:id/chain — chain of custody (M5.3)
 router.get('/:id/chain', requireAuth, (req, res) => {
   try {

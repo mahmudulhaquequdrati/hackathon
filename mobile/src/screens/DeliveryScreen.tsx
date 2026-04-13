@@ -1,27 +1,25 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-    Alert,
-    Modal,
-    RefreshControl,
-    ScrollView, StyleSheet,
-    Text, TouchableOpacity,
-    View,
-} from 'react-native';
+import { Alert, Modal, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { api } from '../lib/api';
 import { importKeyBase64 } from '../lib/crypto';
 import { getDatabase } from '../lib/database';
-import {
-    countersignPod,
-    generatePodPayload,
-    markNonceUsed, storePodReceipt,
-    verifyPodPayload,
-    type PodChallenge
-} from '../lib/pod';
+import { countersignPod, generatePodPayload, markNonceUsed, storePodReceipt, verifyPodPayload, type PodChallenge } from '../lib/pod';
 import { useAuthStore } from '../lib/useAuthStore';
+import { Card } from '../components/Card';
+import { ActionButton } from '../components/ActionButton';
+import { StatusBadge } from '../components/StatusBadge';
+import { PriorityBadge } from '../components/PriorityBadge';
+import { InfoRow } from '../components/InfoRow';
+import { EmptyState } from '../components/EmptyState';
+import { ChipSelector } from '../components/ChipSelector';
+import { OnlineIndicator } from '../components/OnlineIndicator';
+import { colors } from '../theme/colors';
+import { textStyles, fontSize, fontWeight } from '../theme/typography';
+import { spacing, radius } from '../theme/spacing';
 
 interface Delivery {
   id: string; supply_id: string; source_node_id: string; target_node_id: string;
@@ -29,98 +27,68 @@ interface Delivery {
   route_data: string; created_at: string; _local?: boolean;
 }
 
-export default function DeliveryScreen({ onBack }: { onBack: () => void }) {
+const STATUS_CONFIG: Record<string, { color: string; order: number }> = {
+  in_transit: { color: colors.accent.blue, order: 0 },
+  pending: { color: colors.status.warning, order: 1 },
+  delivered: { color: colors.status.success, order: 2 },
+  failed: { color: colors.status.error, order: 3 },
+  preempted: { color: colors.module.auth, order: 4 },
+};
+
+export default function DeliveryScreen({ onBack: _onBack }: { onBack: () => void }) {
   const { user, token, deviceId } = useAuthStore();
   const isOnline = useOnlineStatus();
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-
-  // New delivery form
   const [showNewForm, setShowNewForm] = useState(false);
   const [nodes, setNodes] = useState<{ id: string; name: string; type: string }[]>([]);
   const [formSource, setFormSource] = useState('');
   const [formTarget, setFormTarget] = useState('');
-  const [formVehicle, setFormVehicle] = useState<'truck' | 'boat' | 'drone'>('truck');
-  const [formPriority, setFormPriority] = useState<'P0' | 'P1' | 'P2' | 'P3'>('P2');
-
-  // QR state
+  const [formVehicle, setFormVehicle] = useState<string>('truck');
+  const [formPriority, setFormPriority] = useState<string>('P2');
   const [qrData, setQrData] = useState<PodChallenge | null>(null);
   const [showQr, setShowQr] = useState(false);
-
-  // Scanner state
   const [showScanner, setShowScanner] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
-
-  // Chain view
   const [chainData, setChainData] = useState<any>(null);
   const [showChain, setShowChain] = useState(false);
 
   const fetchDeliveries = useCallback(async () => {
-    // Always load local deliveries
     const db = await getDatabase();
-    const localRows = await db.getAllAsync<Delivery>(
-      'SELECT *, 1 as _local FROM local_deliveries ORDER BY created_at DESC'
-    );
-
-    // Try server deliveries if online
+    const localRows = await db.getAllAsync<Delivery>('SELECT *, 1 as _local FROM local_deliveries ORDER BY created_at DESC');
     let serverRows: Delivery[] = [];
     try {
       const json = await api.get<{ data: { deliveries: Delivery[] } }>('/delivery/');
       serverRows = json.data.deliveries || [];
-    } catch {
-      // Offline — just use local
-    }
-
-    // Merge: server overrides local for same ID, then add local-only ones
+    } catch {}
     const serverIds = new Set(serverRows.map(d => d.id));
     const localOnly = localRows.filter(d => !serverIds.has(d.id));
-    setDeliveries([...serverRows, ...localOnly]);
+    const all = [...serverRows, ...localOnly];
+    all.sort((a, b) => (STATUS_CONFIG[a.status]?.order ?? 5) - (STATUS_CONFIG[b.status]?.order ?? 5));
+    setDeliveries(all);
   }, []);
 
   useEffect(() => { fetchDeliveries(); }, [fetchDeliveries]);
 
-  // Auto-refresh deliveries every 5s so other devices' changes appear
-//   useEffect(() => {
-//     const interval = setInterval(fetchDeliveries, 5000);
-//     return () => clearInterval(interval);
-//   }, [fetchDeliveries]);
-
-  // Fetch graph nodes — cache to local DB, load from cache when offline
   useEffect(() => {
     (async () => {
       const db = await getDatabase();
-
       try {
-        const json = await api.get<{ data: { nodes: { id: string; name: string; type: string; lat?: number; lng?: number; status?: string }[] } }>('/routes/graph');
+        const json = await api.get<{ data: { nodes: any[] } }>('/routes/graph');
         const serverNodes = json.data.nodes || [];
         if (serverNodes.length > 0) {
-          // Cache to local DB
           await db.execAsync('DELETE FROM cached_nodes');
           for (const n of serverNodes) {
-            await db.runAsync(
-              'INSERT OR REPLACE INTO cached_nodes (id, name, type, lat, lng, status) VALUES (?, ?, ?, ?, ?, ?)',
-              [n.id, n.name, n.type, n.lat ?? null, n.lng ?? null, n.status ?? 'active']
-            );
+            await db.runAsync('INSERT OR REPLACE INTO cached_nodes (id, name, type, lat, lng, status) VALUES (?, ?, ?, ?, ?, ?)', [n.id, n.name, n.type, n.lat ?? null, n.lng ?? null, n.status ?? 'active']);
           }
           setNodes(serverNodes);
           if (serverNodes.length >= 2) { setFormSource(serverNodes[0].id); setFormTarget(serverNodes[1].id); }
           return;
         }
-      } catch {
-        // Offline — fall through to local cache
-      }
-
-      // Load from local cache
-      const cached = await db.getAllAsync<{ id: string; name: string; type: string }>('SELECT id, name, type FROM cached_nodes');
-      if (cached.length > 0) {
-        setNodes(cached);
-        setFormSource(cached[0].id);
-        setFormTarget(cached[1]?.id || cached[0].id);
-        return;
-      }
-
-      // No cache either — use static fallback nodes for offline use
+      } catch {}
+      const cached = await db.getAllAsync<any>('SELECT id, name, type FROM cached_nodes');
+      if (cached.length > 0) { setNodes(cached); setFormSource(cached[0].id); setFormTarget(cached[1]?.id || cached[0].id); return; }
       const fallback = [
         { id: 'base-camp', name: 'Base Camp', type: 'hub' },
         { id: 'field-hospital', name: 'Field Hospital', type: 'camp' },
@@ -129,483 +97,343 @@ export default function DeliveryScreen({ onBack }: { onBack: () => void }) {
         { id: 'shelter-b', name: 'Shelter B', type: 'camp' },
         { id: 'drone-base', name: 'Drone Base', type: 'drone_base' },
       ];
-      setNodes(fallback);
-      setFormSource(fallback[0].id);
-      setFormTarget(fallback[1].id);
+      setNodes(fallback); setFormSource(fallback[0].id); setFormTarget(fallback[1].id);
     })();
   }, []);
 
-  // WebSocket listener — works with both real backend and phone relay hub
+  // WebSocket listener
   const wsRef = useRef<WebSocket | null>(null);
   const lastRefreshRef = useRef(0);
-
   useEffect(() => {
     const apiUrl = api.getBaseUrl() || '';
     const wsUrl = apiUrl.replace(/^http/, 'ws').replace(/\/api\/v1$/, '');
     if (!wsUrl) return;
-
     let ws: WebSocket | null = null;
     try {
-      ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
+      ws = new WebSocket(wsUrl); wsRef.current = ws;
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (['POD_CONFIRMED', 'DELIVERY_CREATED', 'DELIVERY_STATUS_CHANGED'].includes(msg.type)) {
+          if (['POD_CONFIRMED', 'DELIVERY_CREATED', 'DELIVERY_STATUS_CHANGED', 'DELIVERY_DELETED'].includes(msg.type)) {
             const now = Date.now();
-            if (now - lastRefreshRef.current > 2000) {
-              lastRefreshRef.current = now;
-              fetchDeliveries();
-            }
+            if (now - lastRefreshRef.current > 2000) { lastRefreshRef.current = now; fetchDeliveries(); }
           }
         } catch {}
       };
-      ws.onerror = () => {}; // Silently fail if WS not available
+      ws.onerror = () => {};
     } catch {}
-
-    return () => {
-      try { ws?.close(); } catch {}
-      wsRef.current = null;
-    };
+    return () => { try { ws?.close(); } catch {} wsRef.current = null; };
   }, [fetchDeliveries]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchDeliveries();
-    setRefreshing(false);
-  };
+  const onRefresh = async () => { setRefreshing(true); await fetchDeliveries(); setRefreshing(false); };
 
-  // ── Create Delivery (works offline) ──────────────────────
   const createDelivery = async () => {
-    if (!formSource || !formTarget) {
-      Alert.alert('Error', 'Select source and target');
-      return;
-    }
-    if (formSource === formTarget) {
-      Alert.alert('Error', 'Source and target must be different');
-      return;
-    }
-
+    if (!formSource || !formTarget) { Alert.alert('Error', 'Select source and target'); return; }
+    if (formSource === formTarget) { Alert.alert('Error', 'Source and target must differ'); return; }
     const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-    // Always save locally first (offline-first)
     const db = await getDatabase();
-    await db.runAsync(
-      `INSERT INTO local_deliveries (id, source_node_id, target_node_id, vehicle_type, priority, status, driver_id)
-       VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
-      [id, formSource, formTarget, formVehicle, formPriority, deviceId || null]
-    );
-
-    // Always try to sync to server (don't wait for isOnline flag)
+    await db.runAsync('INSERT INTO local_deliveries (id, source_node_id, target_node_id, vehicle_type, priority, status, driver_id) VALUES (?, ?, ?, ?, ?, \'pending\', ?)', [id, formSource, formTarget, formVehicle, formPriority, deviceId || null]);
     try {
-      const json = await api.post<{ data: Delivery }>('/delivery/', {
-        source_node_id: formSource,
-        target_node_id: formTarget,
-        vehicle_type: formVehicle,
-        priority: formPriority,
-      });
-      // Update local with server ID
+      const json = await api.post<{ data: Delivery }>('/delivery/', { source_node_id: formSource, target_node_id: formTarget, vehicle_type: formVehicle, priority: formPriority });
       await db.runAsync('UPDATE local_deliveries SET id = ?, synced = 1 WHERE id = ?', [json.data.id, id]);
-    } catch {
-      // Server unreachable — local copy is fine, will sync later
-    }
-
-    Alert.alert('Created', `Delivery ${id.slice(0, 12)}...`);
-    setShowNewForm(false);
-    fetchDeliveries();
+    } catch {}
+    setShowNewForm(false); fetchDeliveries();
   };
 
-  // ── Delete single delivery ──────────────────────────────
   const deleteDelivery = async (id: string) => {
     Alert.alert('Delete', `Delete delivery ${id.slice(0, 8)}...?`, [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: async () => {
-          const db = await getDatabase();
-          await db.runAsync('DELETE FROM local_deliveries WHERE id = ?', [id]);
-          await db.runAsync('DELETE FROM pod_receipts WHERE delivery_id = ?', [id]);
-          fetchDeliveries();
-        },
-      },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try { await api.delete(`/delivery/${id}`); } catch {}
+        const db = await getDatabase();
+        await db.runAsync('DELETE FROM local_deliveries WHERE id = ?', [id]);
+        await db.runAsync('DELETE FROM pod_receipts WHERE delivery_id = ?', [id]);
+        fetchDeliveries();
+      }},
     ]);
   };
 
-  // ── Clear all deliveries ────────────────────────────────
-  const clearAllDeliveries = async () => {
-    Alert.alert('Clear All', 'Delete all local deliveries and receipts?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete All', style: 'destructive', onPress: async () => {
-          const db = await getDatabase();
-          await db.execAsync('DELETE FROM local_deliveries');
-          await db.execAsync('DELETE FROM pod_receipts');
-          await db.execAsync('DELETE FROM used_nonces');
-          setDeliveries([]);
-        },
-      },
-    ]);
-  };
-
-  // ── Generate QR (Driver side — M5.1) ─────────────────────
   const handleGenerateQr = async (delivery: Delivery) => {
     try {
       const store = useAuthStore.getState();
-      const secretKeyB64 = store.secretKey;
-      const publicKeyB64 = store.publicKey;
-
-      if (!secretKeyB64 || !publicKeyB64) {
-        Alert.alert('Error', 'No signing keys found — re-register device');
-        return;
-      }
-
-      const secretKey = importKeyBase64(secretKeyB64);
-      const publicKey = importKeyBase64(publicKeyB64);
-
-      const challenge = generatePodPayload(
-        delivery.id,
-        deviceId!,
-        publicKey,
-        secretKey,
-        `${delivery.supply_id || delivery.id}_${delivery.priority}`,
-      );
-
-      setQrData(challenge);
-      setShowQr(true);
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
-    }
+      if (!store.secretKey || !store.publicKey) { Alert.alert('Error', 'No signing keys'); return; }
+      const secretKey = importKeyBase64(store.secretKey);
+      const publicKey = importKeyBase64(store.publicKey);
+      const challenge = generatePodPayload(delivery.id, deviceId!, publicKey, secretKey, `${delivery.supply_id || delivery.id}_${delivery.priority}`);
+      setQrData(challenge); setShowQr(true);
+    } catch (err: any) { Alert.alert('Error', err.message); }
   };
 
-  // ── Scan QR (Recipient side — M5.1 + M5.2) ──────────────
   const handleScanQr = async () => {
-    if (!permission?.granted) {
-      const result = await requestPermission();
-      if (!result.granted) {
-        Alert.alert('Permission Denied', 'Camera access is needed to scan QR codes');
-        return;
-      }
-    }
-    setScanned(false);
-    setShowScanner(true);
+    if (!permission?.granted) { const result = await requestPermission(); if (!result.granted) { Alert.alert('Permission Denied', 'Camera required'); return; } }
+    setScanned(false); setShowScanner(true);
   };
 
   const scanProcessingRef = useRef(false);
-
   const onBarcodeScanned = async ({ data }: { data: string }) => {
-    // Guard against multiple firings
     if (scanned || scanProcessingRef.current) return;
-    scanProcessingRef.current = true;
-    setScanned(true);
-    setShowScanner(false);
-
+    scanProcessingRef.current = true; setScanned(true); setShowScanner(false);
     try {
       const challenge: PodChallenge = JSON.parse(data);
-
-      // M5.1 + M5.2: Verify signature, check nonce, check expiry
       const result = await verifyPodPayload(challenge);
-
-      if (!result.valid) {
-        Alert.alert('Rejected', `${result.code}: ${result.message}`);
-        return;
-      }
-
-      // M5.1: Countersign
+      if (!result.valid) { Alert.alert('Rejected', `${result.code}: ${result.message}`); return; }
       const store = useAuthStore.getState();
-      if (!store.secretKey) {
-        Alert.alert('Error', 'No signing key');
-        return;
-      }
+      if (!store.secretKey) { Alert.alert('Error', 'No signing key'); return; }
       const receiverSig = countersignPod(challenge.canonical_string, importKeyBase64(store.secretKey));
-
-      // M5.2: Mark nonce as used locally
       await markNonceUsed(challenge.pod_payload.nonce, challenge.pod_payload.delivery_id);
-
-      // Store receipt locally (M5.3)
-      const receiptId = `pod-${Date.now()}`;
-      await storePodReceipt({
-        id: receiptId,
-        delivery_id: challenge.pod_payload.delivery_id,
-        sender_device_id: challenge.pod_payload.sender_device_id,
-        receiver_device_id: deviceId!,
-        sender_signature: challenge.signature,
-        receiver_signature: receiverSig,
-        payload_hash: challenge.pod_payload.payload_hash,
-        nonce: challenge.pod_payload.nonce,
-        status: 'confirmed',
-      });
-
-      // Always try to sync to server
-      try {
-        await api.post(`/delivery/${challenge.pod_payload.delivery_id}/pod`, {
-          action: 'confirm',
-          pod_payload: challenge.pod_payload,
-          sender_signature: challenge.signature,
-          receiver_device_id: deviceId,
-          receiver_signature: receiverSig,
-        });
-      } catch {
-        // Server unreachable — local receipt is saved, will sync later
-      }
-
-      Alert.alert('Confirmed', `Delivery ${challenge.pod_payload.delivery_id.slice(0, 8)}... verified and countersigned`);
-      fetchDeliveries();
-    } catch (err: any) {
-      Alert.alert('Error', `Invalid QR: ${err.message}`);
-    } finally {
-      scanProcessingRef.current = false;
-    }
+      await storePodReceipt({ id: `pod-${Date.now()}`, delivery_id: challenge.pod_payload.delivery_id, sender_device_id: challenge.pod_payload.sender_device_id, receiver_device_id: deviceId!, sender_signature: challenge.signature, receiver_signature: receiverSig, payload_hash: challenge.pod_payload.payload_hash, nonce: challenge.pod_payload.nonce, status: 'confirmed' });
+      try { await api.post(`/delivery/${challenge.pod_payload.delivery_id}/pod`, { action: 'confirm', pod_payload: challenge.pod_payload, sender_signature: challenge.signature, receiver_device_id: deviceId, receiver_signature: receiverSig }); } catch {}
+      Alert.alert('Confirmed', `Delivery verified and countersigned`); fetchDeliveries();
+    } catch (err: any) { Alert.alert('Error', `Invalid QR: ${err.message}`); }
+    finally { scanProcessingRef.current = false; }
   };
 
-  // ── View Chain of Custody (M5.3) ─────────────────────────
   const handleViewChain = async (deliveryId: string) => {
     try {
       const json = await api.get<{ data: any }>(`/delivery/${deliveryId}/chain`);
-      setChainData(json.data);
-      setShowChain(true);
+      setChainData(json.data); setShowChain(true);
     } catch {
-      // Offline fallback — build chain from local pod_receipts
       try {
         const db = await getDatabase();
-        const localReceipts = await db.getAllAsync<any>(
-          'SELECT * FROM pod_receipts WHERE delivery_id = ? ORDER BY created_at ASC',
-          [deliveryId],
-        );
+        const localReceipts = await db.getAllAsync<any>('SELECT * FROM pod_receipts WHERE delivery_id = ? ORDER BY created_at ASC', [deliveryId]);
         const delivery = deliveries.find(d => d.id === deliveryId);
-        setChainData({
-          delivery: { id: deliveryId, status: delivery?.status || 'unknown' },
-          chain_length: localReceipts.length,
-          fully_verified: localReceipts.every((r: any) => r.status === 'confirmed'),
-          receipts: localReceipts,
-          audit_trail: [],
-          _offline: true,
-        });
+        setChainData({ delivery: { id: deliveryId, status: delivery?.status || 'unknown' }, chain_length: localReceipts.length, fully_verified: localReceipts.every((r: any) => r.status === 'confirmed'), receipts: localReceipts, audit_trail: [], _offline: true });
         setShowChain(true);
-      } catch (localErr: any) {
-        Alert.alert('Error', `No chain data available offline: ${localErr.message}`);
-      }
+      } catch (localErr: any) { Alert.alert('Error', `No chain data offline: ${localErr.message}`); }
     }
   };
 
-  // ── Update Status (works offline) ────────────────────────
   const handleStatusChange = async (id: string, newStatus: string) => {
-    // Update locally first
     const db = await getDatabase();
     await db.runAsync('UPDATE local_deliveries SET status = ? WHERE id = ?', [newStatus, id]);
-
-    // Always try server (don't wait for isOnline flag)
-    try {
-      await api.patch(`/delivery/${id}/status`, { status: newStatus });
-    } catch {
-      // Server unreachable — local is updated
-    }
+    try { await api.patch(`/delivery/${id}/status`, { status: newStatus }); } catch {}
     fetchDeliveries();
   };
 
-  const statusColor = (s: string) => {
-    switch (s) {
-      case 'pending': return '#f59e0b';
-      case 'in_transit': return '#3b82f6';
-      case 'delivered': return '#22c55e';
-      case 'failed': return '#ef4444';
-      default: return '#9ca3af';
-    }
-  };
+  const getNodeName = (nodeId: string) => nodes.find(n => n.id === nodeId)?.name || nodeId;
+  const statusCfg = (status: string) => STATUS_CONFIG[status] || { color: colors.text.muted, order: 5 };
+
+  // Group by status
+  const grouped = deliveries.reduce<Record<string, Delivery[]>>((acc, d) => {
+    if (!d?.id) return acc;
+    const key = d.status || 'pending';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(d);
+    return acc;
+  }, {});
+  const sortedGroups = Object.entries(grouped).sort(([a], [b]) => (statusCfg(a).order) - (statusCfg(b).order));
 
   return (
-    <SafeAreaView style={s.container}>
+    <SafeAreaView style={st.safe} edges={['top']}>
       {/* Header */}
-      <View style={s.header}>
-        <TouchableOpacity onPress={onBack} style={s.backBtn}>
-          <Text style={s.backText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={s.title}>Deliveries</Text>
-        <View style={[s.statusDot, { backgroundColor: isOnline ? '#22c55e' : '#ef4444' }]} />
-      </View>
-
-      {/* Actions */}
-      <View style={s.actions}>
-        <TouchableOpacity style={s.actionBtn} onPress={() => setShowNewForm(true)}>
-          <Text style={s.actionText}>+ New Delivery</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#065f46' }]} onPress={handleScanQr}>
-          <Text style={s.actionText}>Scan QR</Text>
-        </TouchableOpacity>
-        {deliveries.length > 0 && (
-          <TouchableOpacity style={[s.actionBtn, { backgroundColor: '#7f1d1d' }]} onPress={clearAllDeliveries}>
-            <Text style={s.actionText}>Clear All</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* New Delivery Form */}
-      {showNewForm && (
-        <View style={s.formCard}>
-          <Text style={s.formTitle}>New Delivery</Text>
-
-          <Text style={s.formLabel}>From</Text>
-          <View style={s.pickerRow}>
-            {nodes.map(n => (
-              <TouchableOpacity key={n.id} style={[s.pickerBtn, formSource === n.id && s.pickerBtnActive]}
-                onPress={() => setFormSource(n.id)}>
-                <Text style={[s.pickerText, formSource === n.id && s.pickerTextActive]}>{n.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={s.formLabel}>To</Text>
-          <View style={s.pickerRow}>
-            {nodes.filter(n => n.id !== formSource).map(n => (
-              <TouchableOpacity key={n.id} style={[s.pickerBtn, formTarget === n.id && s.pickerBtnActive]}
-                onPress={() => setFormTarget(n.id)}>
-                <Text style={[s.pickerText, formTarget === n.id && s.pickerTextActive]}>{n.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={s.formLabel}>Vehicle</Text>
-          <View style={s.pickerRow}>
-            {(['truck', 'boat', 'drone'] as const).map(v => (
-              <TouchableOpacity key={v} style={[s.pickerBtn, formVehicle === v && s.pickerBtnActive]}
-                onPress={() => setFormVehicle(v)}>
-                <Text style={[s.pickerText, formVehicle === v && s.pickerTextActive]}>{v}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={s.formLabel}>Priority</Text>
-          <View style={s.pickerRow}>
-            {(['P0', 'P1', 'P2', 'P3'] as const).map(p => (
-              <TouchableOpacity key={p} style={[s.pickerBtn, formPriority === p && s.pickerBtnActive]}
-                onPress={() => setFormPriority(p)}>
-                <Text style={[s.pickerText, formPriority === p && s.pickerTextActive]}>{p}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <View style={s.formActions}>
-            <TouchableOpacity style={[s.actionBtn, { flex: 1 }]} onPress={createDelivery}>
-              <Text style={s.actionText}>Create</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[s.actionBtn, { flex: 1, backgroundColor: '#374151' }]} onPress={() => setShowNewForm(false)}>
-              <Text style={s.actionText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
+      <View style={st.header}>
+        <View>
+          <Text style={st.headerTitle}>Deliveries</Text>
+          <Text style={st.headerSub}>{deliveries.length} total</Text>
         </View>
-      )}
+        <View style={st.headerRight}>
+          <OnlineIndicator isOnline={isOnline} compact />
+          <ActionButton title="Scan QR" onPress={handleScanQr} variant="success" size="sm" />
+          <ActionButton title="+ New" onPress={() => setShowNewForm(true)} size="sm" />
+        </View>
+      </View>
 
-      {/* Delivery List */}
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3b82f6" />}>
-        {deliveries.length === 0 && (
-          <Text style={s.emptyText}>No deliveries yet. Tap "+ New Delivery" to create one.</Text>
+      <ScrollView
+        contentContainerStyle={st.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent.blue} />}
+        showsVerticalScrollIndicator={false}
+      >
+        {sortedGroups.length === 0 && (
+          <EmptyState title="No deliveries yet" message="Create a delivery to start the proof-of-delivery flow" />
         )}
-        {deliveries.filter(d => d && d.id).map(d => (
-          <View key={d.id} style={s.card}>
-            <View style={s.cardHeader}>
-              <Text style={s.cardId}>{d.id?.slice(0, 8)}...</Text>
-              <View style={[s.badge, { backgroundColor: statusColor(d.status || 'pending') }]}>
-                <Text style={s.badgeText}>{(d.status || 'pending').toUpperCase()}</Text>
-              </View>
-            </View>
-            <Text style={s.cardDetail}>{d.source_node_id} → {d.target_node_id}</Text>
-            <Text style={s.cardDetail}>{d.vehicle_type} | {d.priority}</Text>
 
-            <View style={s.cardActions}>
-              {d.status === 'pending' && (
-                <TouchableOpacity style={s.smallBtn} onPress={() => handleStatusChange(d.id, 'in_transit')}>
-                  <Text style={s.smallBtnText}>Start Transit</Text>
-                </TouchableOpacity>
-              )}
-              {d.status === 'in_transit' && (
-                <TouchableOpacity style={[s.smallBtn, { backgroundColor: '#065f46' }]} onPress={() => handleGenerateQr(d)}>
-                  <Text style={s.smallBtnText}>Generate QR</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity style={[s.smallBtn, { backgroundColor: '#1e3a5f' }]} onPress={() => handleViewChain(d.id)}>
-                <Text style={s.smallBtnText}>Chain</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[s.smallBtn, { backgroundColor: '#7f1d1d' }]} onPress={() => deleteDelivery(d.id)}>
-                <Text style={s.smallBtnText}>Delete</Text>
-              </TouchableOpacity>
+        {sortedGroups.map(([status, items]) => (
+          <View key={status} style={st.statusGroup}>
+            <View style={st.groupHeader}>
+              <StatusBadge label={status.toUpperCase()} color={statusCfg(status).color} dot size="md" />
+              <Text style={st.groupCount}>{items.length}</Text>
             </View>
+            {items.map(d => (
+              <Card key={d.id} style={st.deliveryCard}>
+                <View style={st.deliveryHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={st.deliveryRoute}>{getNodeName(d.source_node_id)} {'\u2192'} {getNodeName(d.target_node_id)}</Text>
+                    <View style={st.deliveryMeta}>
+                      <Text style={st.deliveryId}>{d.id?.slice(0, 8)}...</Text>
+                      <Text style={st.deliveryVehicle}>{d.vehicle_type}</Text>
+                    </View>
+                  </View>
+                  <PriorityBadge priority={d.priority} showLabel />
+                </View>
+
+                {/* Timeline dots */}
+                <View style={st.timeline}>
+                  {['pending', 'in_transit', 'delivered'].map((step, i) => {
+                    const stepOrder = STATUS_CONFIG[step]?.order ?? 5;
+                    const currentOrder = STATUS_CONFIG[d.status]?.order ?? 5;
+                    const isDone = currentOrder >= stepOrder && d.status !== 'failed';
+                    return (
+                      <React.Fragment key={step}>
+                        {i > 0 && <View style={[st.timelineLine, isDone && st.timelineLineDone]} />}
+                        <View style={[st.timelineDot, isDone && st.timelineDotDone]}>
+                          {isDone && <Text style={st.timelineCheck}>{'\u2713'}</Text>}
+                        </View>
+                      </React.Fragment>
+                    );
+                  })}
+                </View>
+
+                <View style={st.deliveryActions}>
+                  {d.status === 'pending' && (
+                    <ActionButton title="Start Transit" onPress={() => handleStatusChange(d.id, 'in_transit')} variant="primary" size="sm" style={{ flex: 1 }} />
+                  )}
+                  {d.status === 'in_transit' && (
+                    <ActionButton title="Generate QR" onPress={() => handleGenerateQr(d)} variant="success" size="sm" style={{ flex: 1 }} />
+                  )}
+                  <ActionButton title="Chain" onPress={() => handleViewChain(d.id)} variant="secondary" size="sm" />
+                  <ActionButton title="Del" onPress={() => deleteDelivery(d.id)} variant="destructive" size="sm" />
+                </View>
+              </Card>
+            ))}
           </View>
         ))}
+        <View style={{ height: spacing['3xl'] }} />
       </ScrollView>
 
-      {/* QR Display Modal */}
-      <Modal visible={showQr} animationType="slide" transparent>
-        <View style={s.modalOverlay}>
-          <View style={s.modalContent}>
-            <Text style={s.modalTitle}>Proof of Delivery QR</Text>
-            <Text style={s.modalSub}>Show this to the recipient to scan</Text>
-            {qrData && (
-              <View style={s.qrContainer}>
-                <QRCode value={JSON.stringify(qrData)} size={250} backgroundColor="#fff" color="#000" />
-              </View>
-            )}
-            {qrData && (
-              <Text style={s.nonceText}>Nonce: {qrData.pod_payload.nonce.slice(0, 8)}...</Text>
-            )}
-            <TouchableOpacity style={s.closeBtn} onPress={() => { setShowQr(false); fetchDeliveries(); }}>
-              <Text style={s.closeBtnText}>Close</Text>
-            </TouchableOpacity>
+      {/* New Delivery Modal */}
+      <Modal visible={showNewForm} transparent animationType="slide">
+        <View style={st.modalOverlay}>
+          <View style={st.modalSheet}>
+            <View style={st.modalHandle} />
+            <Text style={st.modalTitle}>New Delivery</Text>
+
+            <Text style={st.fieldLabel}>From</Text>
+            <ChipSelector
+              options={nodes.map(n => ({ key: n.id, label: n.name }))}
+              selected={formSource}
+              onSelect={setFormSource}
+              size="sm"
+            />
+
+            <Text style={st.fieldLabel}>To</Text>
+            <ChipSelector
+              options={nodes.filter(n => n.id !== formSource).map(n => ({ key: n.id, label: n.name }))}
+              selected={formTarget}
+              onSelect={setFormTarget}
+              size="sm"
+            />
+
+            <Text style={st.fieldLabel}>Vehicle</Text>
+            <ChipSelector
+              options={[{ key: 'truck', label: 'Truck' }, { key: 'boat', label: 'Boat' }, { key: 'drone', label: 'Drone' }]}
+              selected={formVehicle}
+              onSelect={setFormVehicle}
+            />
+
+            <Text style={st.fieldLabel}>Priority</Text>
+            <ChipSelector
+              options={[
+                { key: 'P0', label: 'P0', color: colors.priority.p0 },
+                { key: 'P1', label: 'P1', color: colors.priority.p1 },
+                { key: 'P2', label: 'P2', color: colors.priority.p2 },
+                { key: 'P3', label: 'P3', color: colors.priority.p3 },
+              ]}
+              selected={formPriority}
+              onSelect={setFormPriority}
+            />
+
+            <View style={st.modalActions}>
+              <ActionButton title="Cancel" onPress={() => setShowNewForm(false)} variant="ghost" style={{ flex: 1 }} />
+              <ActionButton title="Create" onPress={createDelivery} style={{ flex: 2 }} />
+            </View>
           </View>
         </View>
       </Modal>
 
-      {/* Camera Scanner Modal */}
+      {/* QR Display Modal */}
+      <Modal visible={showQr} animationType="slide" transparent>
+        <View style={st.modalOverlay}>
+          <View style={st.qrModal}>
+            <Text style={st.qrModalTitle}>Proof of Delivery</Text>
+            <Text style={st.qrModalSub}>Show this QR to the recipient</Text>
+            {qrData && (
+              <>
+                <View style={st.qrFrame}>
+                  <QRCode value={JSON.stringify(qrData)} size={220} backgroundColor="#fff" color="#000" />
+                </View>
+                <View style={st.qrMeta}>
+                  <InfoRow label="Nonce" value={`${qrData.pod_payload.nonce.slice(0, 12)}...`} compact />
+                  <InfoRow label="Delivery" value={`${qrData.pod_payload.delivery_id.slice(0, 12)}...`} compact />
+                </View>
+              </>
+            )}
+            <ActionButton title="Close" onPress={() => { setShowQr(false); fetchDeliveries(); }} variant="secondary" fullWidth />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Scanner Modal */}
       <Modal visible={showScanner} animationType="slide">
-        <SafeAreaView style={s.scannerContainer}>
-          <Text style={s.scannerTitle}>Scan PoD QR Code</Text>
-          <CameraView
-            style={s.camera}
-            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-            onBarcodeScanned={scanned ? undefined : onBarcodeScanned}
-          />
-          <TouchableOpacity style={s.closeBtn} onPress={() => setShowScanner(false)}>
-            <Text style={s.closeBtnText}>Cancel</Text>
-          </TouchableOpacity>
+        <SafeAreaView style={st.scannerWrap}>
+          <View style={st.scannerHeader}>
+            <Text style={st.scannerTitle}>Scan PoD QR Code</Text>
+            <Text style={st.scannerHint}>Point at the driver's QR code to verify delivery</Text>
+          </View>
+          <View style={{ flex: 1, position: 'relative' }}>
+            <CameraView style={st.camera} barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={scanned ? undefined : onBarcodeScanned} />
+            <View style={st.viewfinder}>
+              <View style={[st.corner, st.cornerTL]} />
+              <View style={[st.corner, st.cornerTR]} />
+              <View style={[st.corner, st.cornerBL]} />
+              <View style={[st.corner, st.cornerBR]} />
+            </View>
+          </View>
+          <ActionButton title="Cancel" onPress={() => setShowScanner(false)} variant="secondary" fullWidth size="lg" style={{ margin: spacing.lg }} />
         </SafeAreaView>
       </Modal>
 
       {/* Chain of Custody Modal */}
       <Modal visible={showChain} animationType="slide" transparent>
-        <View style={s.modalOverlay}>
-          <View style={s.modalContent}>
-            <Text style={s.modalTitle}>Chain of Custody</Text>
+        <View style={st.modalOverlay}>
+          <View style={st.chainModal}>
+            <View style={st.modalHandle} />
+            <Text style={st.modalTitle}>Chain of Custody</Text>
             {chainData && (
-              <ScrollView style={{ maxHeight: 400 }}>
-                <Text style={s.chainLabel}>Delivery: {chainData.delivery?.id?.slice(0, 8)}...</Text>
-                <Text style={s.chainLabel}>Status: {chainData.delivery?.status}</Text>
-                <Text style={s.chainLabel}>Receipts: {chainData.chain_length}</Text>
-                <Text style={s.chainLabel}>Fully Verified: {chainData.fully_verified ? 'Yes' : 'No'}</Text>
+              <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+                <View style={st.chainSummary}>
+                  <InfoRow label="Delivery" value={chainData.delivery?.id?.slice(0, 12) + '...'} compact />
+                  <InfoRow label="Status" value={chainData.delivery?.status} valueColor={statusCfg(chainData.delivery?.status).color} compact />
+                  <InfoRow label="Receipts" value={String(chainData.chain_length)} compact />
+                  <InfoRow label="Verified" value={chainData.fully_verified ? 'Yes' : 'No'} valueColor={chainData.fully_verified ? colors.status.success : colors.status.warning} compact />
+                </View>
 
                 {chainData.receipts?.map((r: any, i: number) => (
-                  <View key={r.id} style={s.receiptCard}>
-                    <Text style={s.receiptTitle}>Receipt #{i + 1}</Text>
-                    <Text style={s.receiptDetail}>Sender: {r.sender_device_id}</Text>
-                    <Text style={s.receiptDetail}>Receiver: {r.receiver_device_id}</Text>
-                    <Text style={s.receiptDetail}>Nonce: {r.nonce?.slice(0, 8)}...</Text>
-                    <Text style={s.receiptDetail}>Sender Sig: {r.sender_signature ? 'Yes' : 'No'}</Text>
-                    <Text style={s.receiptDetail}>Receiver Sig: {r.receiver_signature ? 'Yes' : 'No'}</Text>
-                    <Text style={[s.receiptDetail, { color: r.status === 'confirmed' ? '#22c55e' : '#f59e0b' }]}>
-                      {r.status?.toUpperCase()}
-                    </Text>
-                  </View>
+                  <Card key={r.id} style={st.receiptCard} variant="accent" accentColor={r.status === 'confirmed' ? colors.status.success : colors.status.warning}>
+                    <View style={st.receiptHeader}>
+                      <Text style={st.receiptTitle}>Receipt #{i + 1}</Text>
+                      <StatusBadge label={r.status || 'pending'} color={r.status === 'confirmed' ? colors.status.success : colors.status.warning} />
+                    </View>
+                    <InfoRow label="Sender" value={r.sender_device_id?.slice(0, 14) + '...'} compact />
+                    <InfoRow label="Receiver" value={r.receiver_device_id?.slice(0, 14) + '...'} compact />
+                    <InfoRow label="Nonce" value={r.nonce?.slice(0, 12) + '...'} compact />
+                    <View style={st.sigRow}>
+                      <StatusBadge label={r.sender_signature ? 'Sender Sig' : 'No Sig'} color={r.sender_signature ? colors.status.success : colors.status.error} size="sm" />
+                      <StatusBadge label={r.receiver_signature ? 'Receiver Sig' : 'No Sig'} color={r.receiver_signature ? colors.status.success : colors.status.error} size="sm" />
+                    </View>
+                  </Card>
                 ))}
 
                 {chainData.audit_trail?.length > 0 && (
-                  <>
-                    <Text style={[s.chainLabel, { marginTop: 12 }]}>Audit Trail ({chainData.audit_trail.length} entries)</Text>
+                  <View style={{ marginTop: spacing.lg }}>
+                    <Text style={st.chainSection}>Audit Trail ({chainData.audit_trail.length})</Text>
                     {chainData.audit_trail.map((a: any) => (
-                      <Text key={a.id} style={s.receiptDetail}>{a.action} — {a.created_at}</Text>
+                      <Text key={a.id} style={st.auditEntry}>{a.action} - {a.created_at}</Text>
                     ))}
-                  </>
+                  </View>
                 )}
               </ScrollView>
             )}
-            <TouchableOpacity style={s.closeBtn} onPress={() => setShowChain(false)}>
-              <Text style={s.closeBtnText}>Close</Text>
-            </TouchableOpacity>
+            <ActionButton title="Close" onPress={() => setShowChain(false)} variant="secondary" fullWidth style={{ marginTop: spacing.lg }} />
           </View>
         </View>
       </Modal>
@@ -613,55 +441,78 @@ export default function DeliveryScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#030712' },
-  header: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#111827' },
-  backBtn: { paddingHorizontal: 12, paddingVertical: 6 },
-  backText: { color: '#3b82f6', fontSize: 16 },
-  title: { flex: 1, color: '#f9fafb', fontSize: 18, fontWeight: '700', textAlign: 'center' },
-  statusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
+const st = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.bg.primary },
 
-  actions: { flexDirection: 'row', gap: 8, padding: 12 },
-  actionBtn: { flex: 1, backgroundColor: '#4c1d95', borderRadius: 12, padding: 12, alignItems: 'center' },
-  actionText: { color: '#e0d4ff', fontSize: 14, fontWeight: '600' },
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: colors.border.default, backgroundColor: colors.bg.primary,
+  },
+  headerTitle: { ...textStyles.h3, color: colors.text.primary },
+  headerSub: { fontSize: fontSize.sm, color: colors.text.muted },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
 
-  formCard: { backgroundColor: '#111827', borderRadius: 12, padding: 14, marginHorizontal: 12, marginTop: 8 },
-  formTitle: { color: '#f9fafb', fontSize: 16, fontWeight: '700', marginBottom: 8 },
-  formLabel: { color: '#9ca3af', fontSize: 12, fontWeight: '600', marginTop: 8, marginBottom: 4 },
-  pickerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  pickerBtn: { backgroundColor: '#1f2937', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  pickerBtnActive: { backgroundColor: '#3b82f6' },
-  pickerText: { color: '#9ca3af', fontSize: 12 },
-  pickerTextActive: { color: '#fff' },
-  formActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  content: { padding: spacing.lg },
 
-  emptyText: { color: '#6b7280', textAlign: 'center', marginTop: 40, fontSize: 14 },
+  // Status groups
+  statusGroup: { marginBottom: spacing.lg },
+  groupHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  groupCount: { fontSize: fontSize.sm, color: colors.text.muted },
 
-  card: { backgroundColor: '#111827', borderRadius: 12, padding: 14, marginHorizontal: 12, marginTop: 8 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardId: { color: '#f9fafb', fontSize: 16, fontWeight: '700' },
-  badge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
-  badgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  cardDetail: { color: '#9ca3af', fontSize: 13, marginTop: 4 },
-  cardActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  smallBtn: { backgroundColor: '#4c1d95', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  smallBtnText: { color: '#e0d4ff', fontSize: 12, fontWeight: '600' },
+  // Delivery cards
+  deliveryCard: { marginBottom: spacing.sm, padding: spacing.md },
+  deliveryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  deliveryRoute: { ...textStyles.h4, color: colors.text.primary, marginBottom: spacing.xs },
+  deliveryMeta: { flexDirection: 'row', gap: spacing.md },
+  deliveryId: { fontSize: fontSize.xs, color: colors.text.muted },
+  deliveryVehicle: { fontSize: fontSize.xs, color: colors.text.tertiary, textTransform: 'capitalize' },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { backgroundColor: '#1f2937', borderRadius: 16, padding: 24, width: '90%', alignItems: 'center' },
-  modalTitle: { color: '#f9fafb', fontSize: 20, fontWeight: '700' },
-  modalSub: { color: '#9ca3af', fontSize: 13, marginTop: 4, marginBottom: 16 },
-  qrContainer: { backgroundColor: '#fff', padding: 16, borderRadius: 12 },
-  nonceText: { color: '#6b7280', fontSize: 12, marginTop: 12 },
-  closeBtn: { backgroundColor: '#374151', borderRadius: 12, paddingHorizontal: 24, paddingVertical: 10, marginTop: 16 },
-  closeBtnText: { color: '#f9fafb', fontSize: 14, fontWeight: '600' },
+  // Timeline
+  timeline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginVertical: spacing.md, paddingHorizontal: spacing.xl },
+  timelineDot: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.border.default, alignItems: 'center', justifyContent: 'center' },
+  timelineDotDone: { borderColor: colors.status.success, backgroundColor: colors.status.successMuted },
+  timelineCheck: { color: colors.status.success, fontSize: 10, fontWeight: '700' },
+  timelineLine: { flex: 1, height: 2, backgroundColor: colors.border.default },
+  timelineLineDone: { backgroundColor: colors.status.success },
 
-  scannerContainer: { flex: 1, backgroundColor: '#030712' },
-  scannerTitle: { color: '#f9fafb', fontSize: 18, fontWeight: '700', textAlign: 'center', padding: 16 },
-  camera: { flex: 1, marginHorizontal: 16, borderRadius: 12, overflow: 'hidden' },
+  deliveryActions: { flexDirection: 'row', gap: spacing.sm },
 
-  chainLabel: { color: '#93c5fd', fontSize: 14, fontWeight: '600', marginTop: 4 },
-  receiptCard: { backgroundColor: '#0f172a', borderRadius: 8, padding: 10, marginTop: 8 },
-  receiptTitle: { color: '#f9fafb', fontSize: 14, fontWeight: '700' },
-  receiptDetail: { color: '#9ca3af', fontSize: 12, marginTop: 2 },
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: colors.bg.overlay, justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: colors.bg.card, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing['2xl'], paddingBottom: spacing['4xl'], borderWidth: 1, borderColor: colors.border.default },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border.light, alignSelf: 'center', marginBottom: spacing.xl },
+  modalTitle: { ...textStyles.h3, color: colors.text.primary, marginBottom: spacing.lg },
+  modalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl },
+  fieldLabel: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: colors.text.secondary, marginBottom: spacing.sm, marginTop: spacing.md },
+
+  // QR Modal
+  qrModal: { backgroundColor: colors.bg.card, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing['2xl'], paddingBottom: spacing['4xl'], alignItems: 'center', borderWidth: 1, borderColor: colors.border.default },
+  qrModalTitle: { ...textStyles.h3, color: colors.text.primary },
+  qrModalSub: { fontSize: fontSize.sm, color: colors.text.muted, marginTop: spacing.xs, marginBottom: spacing.xl },
+  qrFrame: { backgroundColor: '#fff', padding: spacing.lg, borderRadius: radius.lg },
+  qrMeta: { width: '100%', marginTop: spacing.lg, marginBottom: spacing.lg },
+
+  // Scanner
+  scannerWrap: { flex: 1, backgroundColor: colors.bg.primary },
+  scannerHeader: { alignItems: 'center', paddingVertical: spacing.lg },
+  scannerTitle: { ...textStyles.h3, color: colors.text.primary },
+  scannerHint: { fontSize: fontSize.sm, color: colors.text.muted, marginTop: spacing.xs },
+  camera: { flex: 1 },
+  viewfinder: { position: 'absolute', top: '25%', left: '15%', width: '70%', height: '50%' },
+  corner: { position: 'absolute', width: 24, height: 24, borderColor: colors.accent.blue },
+  cornerTL: { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 4 },
+  cornerTR: { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 4 },
+  cornerBL: { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 4 },
+  cornerBR: { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 4 },
+
+  // Chain modal
+  chainModal: { backgroundColor: colors.bg.card, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing['2xl'], paddingBottom: spacing['4xl'], borderWidth: 1, borderColor: colors.border.default, maxHeight: '80%' },
+  chainSummary: { marginBottom: spacing.lg },
+  receiptCard: { marginBottom: spacing.sm },
+  receiptHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  receiptTitle: { ...textStyles.h4, color: colors.text.primary },
+  sigRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  chainSection: { ...textStyles.label, color: colors.text.muted, marginBottom: spacing.sm },
+  auditEntry: { fontSize: fontSize.sm, color: colors.text.muted, marginBottom: spacing.xs },
 });

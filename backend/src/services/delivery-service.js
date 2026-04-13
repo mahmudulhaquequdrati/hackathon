@@ -244,6 +244,20 @@ function getDeliveryChain(deliveryId) {
   };
 }
 
+function deleteDelivery(id) {
+  const db = getDb();
+
+  const delivery = db.prepare('SELECT * FROM deliveries WHERE id = ?').get(id);
+  if (!delivery) throw new Error(`Delivery not found: ${id}`);
+
+  db.prepare('DELETE FROM pod_receipts WHERE delivery_id = ?').run(id);
+  const result = db.prepare('DELETE FROM deliveries WHERE id = ?').run(id);
+
+  auditService.appendLog(delivery.driver_id, 'DELIVERY_DELETED', 'deliveries', { delivery_id: id });
+
+  return result.changes;
+}
+
 // ── Nonce helpers ────────────────────────────────────────────────────
 
 function isNonceUsed(nonce) {
@@ -255,6 +269,7 @@ module.exports = {
   getDeliveries,
   getDeliveryById,
   updateDeliveryStatus,
+  deleteDelivery,
   createPodChallenge,
   verifyAndConfirmPod,
   getDeliveryChain,

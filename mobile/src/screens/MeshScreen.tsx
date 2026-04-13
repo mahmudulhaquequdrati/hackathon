@@ -5,402 +5,585 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  FlatList,
   StyleSheet,
   Alert,
+  Clipboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../lib/useAuthStore';
 import { useMeshStore } from '../lib/useMeshStore';
+import { useSupplyStore } from '../lib/useSupplyStore';
 import { transportManager } from '../lib/mesh-transport';
 import { api } from '../lib/api';
+import { buildSyncPayload, applySyncPayload, type P2PSyncPayload } from '../lib/p2p-sync';
+import { log } from '../lib/debug';
+import { Card } from '../components/Card';
+import { ActionButton } from '../components/ActionButton';
+import { StatusBadge } from '../components/StatusBadge';
+import { InfoRow } from '../components/InfoRow';
+import { EmptyState } from '../components/EmptyState';
+import { colors } from '../theme/colors';
+import { textStyles, fontSize, fontWeight } from '../theme/typography';
+import { spacing, radius } from '../theme/spacing';
 import type { MeshMessage, MeshPeer } from '../types';
+import type { VectorClock } from '../lib/crdt';
+
+type Tab = 'sync' | 'mesh';
+
+interface SyncStats {
+  bytesIn: number;
+  bytesOut: number;
+  totalBytes: number;
+  deltaSync: boolean;
+  recordsSent: number;
+  recordsReceived: number;
+}
 
 export default function MeshScreen({ onBack, onNavigate }: { onBack: () => void; onNavigate?: (screen: string) => void }) {
+  const [activeTab, setActiveTab] = useState<Tab>('mesh');
   const { deviceId } = useAuthStore();
+  const { loadSupplies } = useSupplyStore();
   const {
-    inbox,
-    outbox,
-    peers,
-    nodeRole,
-    batteryLevel,
-    signalStrength,
-    connectedPeers,
-    isFlushingQueue,
-    lastFlushAt,
-    roleHistory,
-    relayedCount,
-    boxPublicKey,
-    initialized,
-    initialize,
-    sendMessage,
-    checkInbox,
-    flushOutbox,
-    decryptMsg,
-    updateRoleHeuristics,
-    fetchAndCachePeers,
+    inbox, outbox, peers, nodeRole, batteryLevel, signalStrength,
+    connectedPeers, isFlushingQueue, lastFlushAt, roleHistory,
+    relayedCount, boxPublicKey, initialized,
+    initialize, sendMessage, checkInbox, flushOutbox, decryptMsg,
+    updateRoleHeuristics, fetchAndCachePeers,
   } = useMeshStore();
 
+  // Sync state
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'done' | 'error'>('idle');
+  const [syncStats, setSyncStats] = useState<SyncStats | null>(null);
+  const [syncError, setSyncError] = useState('');
+  const [peerDeviceId, setPeerDeviceId] = useState('');
+
+  // Mesh state
   const [messageText, setMessageText] = useState('');
   const [selectedPeer, setSelectedPeer] = useState<MeshPeer | null>(null);
   const [expandedMsg, setExpandedMsg] = useState<string | null>(null);
   const [decryptedCache, setDecryptedCache] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const [transportType, setTransportType] = useState<string>('http');
-  const [backendUrl, setBackendUrl] = useState(api.getBaseUrl());
 
-  // Poll transport status
   useEffect(() => {
-    const interval = setInterval(() => {
-      setTransportType(transportManager.activeType);
-      setBackendUrl(api.getBaseUrl());
-    }, 5000);
+    const interval = setInterval(() => setTransportType(transportManager.activeType), 5000);
     setTransportType(transportManager.activeType);
-    setBackendUrl(api.getBaseUrl());
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
-    if (deviceId && !initialized) {
-      initialize(deviceId);
-    }
+    if (deviceId && !initialized) initialize(deviceId);
   }, [deviceId, initialized]);
 
-  // Simulate role heuristics with semi-random values (expo-battery can be added later)
   useEffect(() => {
     if (!initialized) return;
     const interval = setInterval(() => {
-      const battery = 0.5 + Math.random() * 0.5; // 50-100%
-      const signal = 0.3 + Math.random() * 0.7;  // 30-100%
-      const peerCount = peers.length;
-      updateRoleHeuristics(battery, signal, peerCount);
+      const battery = 0.5 + Math.random() * 0.5;
+      const signal = 0.3 + Math.random() * 0.7;
+      updateRoleHeuristics(battery, signal, peers.length);
     }, 15_000);
     return () => clearInterval(interval);
   }, [initialized, peers.length]);
 
-  const handleSend = async () => {
-    if (!selectedPeer || !messageText.trim()) {
-      Alert.alert('Error', 'Select a peer and type a message');
-      return;
+  // P2P Sync handlers
+  const handleP2PSync = async () => {
+    if (!deviceId) return;
+    setSyncStatus('syncing'); setSyncError(''); setSyncStats(null);
+    try {
+      const stateRes = await api.get<{ vectorClock: VectorClock }>('/p2p/state');
+      const outgoing = await buildSyncPayload(deviceId, stateRes.vectorClock || {});
+      const response = await api.post<any>('/p2p/exchange', outgoing);
+      const incomingPayload: P2PSyncPayload = { deviceId: response.deviceId, vectorClock: response.vectorClock, changes: response.changes };
+      await applySyncPayload(incomingPayload);
+      await loadSupplies();
+      setSyncStats(response.stats); setSyncStatus('done');
+    } catch (err) {
+      setSyncStatus('error'); setSyncError((err as Error).message);
     }
+  };
+
+  const handleMailboxSync = async () => {
+    if (!deviceId || !peerDeviceId.trim()) return;
+    setSyncStatus('syncing'); setSyncError('');
+    try {
+      const outgoing = await buildSyncPayload(deviceId, {});
+      await api.post('/p2p/offer', { fromDeviceId: deviceId, toDeviceId: peerDeviceId.trim(), payload: outgoing });
+      const pickup = await api.get<any>(`/p2p/pickup?fromDeviceId=${peerDeviceId.trim()}&toDeviceId=${deviceId}`);
+      if (pickup.data?.available && pickup.data.payload) {
+        await applySyncPayload(pickup.data.payload);
+        await loadSupplies();
+        setSyncStats({ bytesIn: pickup.data.bytes || 0, bytesOut: JSON.stringify(outgoing).length, totalBytes: (pickup.data.bytes || 0) + JSON.stringify(outgoing).length, deltaSync: false, recordsSent: outgoing.changes.length, recordsReceived: pickup.data.payload.changes?.length || 0 });
+      } else {
+        setSyncStats({ bytesIn: 0, bytesOut: JSON.stringify(outgoing).length, totalBytes: JSON.stringify(outgoing).length, deltaSync: false, recordsSent: outgoing.changes.length, recordsReceived: 0 });
+      }
+      setSyncStatus('done');
+    } catch (err) {
+      setSyncStatus('error'); setSyncError((err as Error).message);
+    }
+  };
+
+  // Mesh handlers
+  const handleSend = async () => {
+    if (!selectedPeer || !messageText.trim()) { Alert.alert('Error', 'Select a peer and type a message'); return; }
     setSending(true);
     try {
       await sendMessage(selectedPeer.deviceId, messageText.trim(), selectedPeer.boxPublicKey);
-      setMessageText('');
-      Alert.alert('Sent', 'Message encrypted and queued');
-    } catch (err) {
-      Alert.alert('Error', (err as Error).message);
-    }
+      setMessageText(''); Alert.alert('Sent', 'Message encrypted and queued');
+    } catch (err) { Alert.alert('Error', (err as Error).message); }
     setSending(false);
   };
 
   const handleDecrypt = (msg: MeshMessage) => {
-    if (decryptedCache[msg.id]) {
-      setExpandedMsg(expandedMsg === msg.id ? null : msg.id);
-      return;
-    }
+    if (decryptedCache[msg.id]) { setExpandedMsg(expandedMsg === msg.id ? null : msg.id); return; }
     const plaintext = decryptMsg(msg);
-    if (plaintext) {
-      setDecryptedCache(prev => ({ ...prev, [msg.id]: plaintext }));
-      setExpandedMsg(msg.id);
-    } else {
-      Alert.alert('Decryption Failed', 'Cannot decrypt this message. You may not be the intended recipient.');
-    }
+    if (plaintext) { setDecryptedCache(prev => ({ ...prev, [msg.id]: plaintext })); setExpandedMsg(msg.id); }
+    else Alert.alert('Decryption Failed', 'Cannot decrypt. You may not be the intended recipient.');
   };
 
   const pendingOutbox = outbox.filter(m => m.status === 'pending');
   const deliveredInbox = inbox.filter(m => m.status === 'delivered' || m.status === 'pending');
 
   return (
-    <SafeAreaView style={s.safe}>
-      <ScrollView contentContainerStyle={s.content}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={s.backBtn}>Back to Dashboard</Text>
+    <SafeAreaView style={s.safe} edges={['top']}>
+      {/* Header */}
+      <View style={s.header}>
+        <View>
+          <Text style={s.headerTitle}>Network</Text>
+          <Text style={s.headerSub}>Sync & Mesh Communication</Text>
+        </View>
+        <View style={s.headerRight}>
+          <StatusBadge
+            label={nodeRole.toUpperCase()}
+            color={nodeRole === 'relay' ? colors.status.success : colors.accent.blue}
+            dot
+          />
+        </View>
+      </View>
+
+      {/* Top Tabs */}
+      <View style={s.tabBar}>
+        <TouchableOpacity
+          style={[s.tab, activeTab === 'mesh' && s.tabActive]}
+          onPress={() => setActiveTab('mesh')}
+        >
+          <Text style={[s.tabText, activeTab === 'mesh' && s.tabTextActive]}>Mesh</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.tab, activeTab === 'sync' && s.tabActive]}
+          onPress={() => setActiveTab('sync')}
+        >
+          <Text style={[s.tabText, activeTab === 'sync' && s.tabTextActive]}>Sync</Text>
+        </TouchableOpacity>
+      </View>
 
-        <Text style={s.title}>Mesh Network</Text>
-        <Text style={s.subtitle}>M3: Store-and-forward encrypted relay</Text>
-
-        {/* Node Status */}
-        <View style={s.card}>
-          <Text style={s.cardH}>NODE STATUS</Text>
-          <View style={s.roleRow}>
-            <View style={[s.roleBadge, nodeRole === 'relay' ? s.relayBadge : s.clientBadge]}>
-              <Text style={[s.roleBadgeText, nodeRole === 'relay' ? s.relayText : s.clientText]}>
-                {nodeRole.toUpperCase()}
-              </Text>
-            </View>
-            <Text style={s.roleSub}>
-              {nodeRole === 'relay' ? 'Forwarding messages for peers' : 'Sending/receiving only'}
-            </Text>
-          </View>
-          <Row label="Battery" value={`${(batteryLevel * 100).toFixed(0)}%`} color={batteryLevel > 0.5 ? '#22c55e' : '#f59e0b'} />
-          <Row label="Signal" value={`${(signalStrength * 100).toFixed(0)}%`} color={signalStrength > 0.6 ? '#22c55e' : '#f59e0b'} />
-          <Row label="Connected Peers" value={String(connectedPeers)} />
-          {nodeRole === 'relay' && <Row label="Messages Relayed" value={String(relayedCount)} color="#a855f7" />}
-          <Row label="Box Key" value={boxPublicKey ? `${boxPublicKey.substring(0, 16)}...` : 'Not set'} color="#60a5fa" />
-        </View>
-
-        {/* Transport Status */}
-        <View style={s.card}>
-          <Text style={s.cardH}>TRANSPORT</Text>
-          <View style={s.roleRow}>
-            <View style={[s.roleBadge, transportType === 'ble' ? s.relayBadge : s.clientBadge]}>
-              <Text style={[s.roleBadgeText, transportType === 'ble' ? s.relayText : s.clientText]}>
-                {transportType.toUpperCase()}
-              </Text>
-            </View>
-            <Text style={s.roleSub}>
-              {transportType === 'ble'
-                ? 'Direct Bluetooth — no internet needed'
-                : 'Server relay (simulator / fallback)'}
-            </Text>
-          </View>
-          <Row label="BLE Available" value={transportManager.isBleActive ? 'Yes' : 'No'} color={transportManager.isBleActive ? '#22c55e' : '#6b7280'} />
-          <Row label="HTTP Fallback" value="Available" color="#60a5fa" />
-          <Row
-            label="Backend"
-            value={backendUrl}
-            color={/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(backendUrl) ? '#22c55e' : '#f59e0b'}
-          />
-          <Row
-            label="Network"
-            value={/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(backendUrl) ? 'Local LAN' : 'Remote'}
-            color={/^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(backendUrl) ? '#22c55e' : '#f59e0b'}
-          />
-          {onNavigate && (
-            <TouchableOpacity style={{ marginTop: 8, borderWidth: 1, borderColor: '#374151', borderRadius: 8, padding: 8, alignItems: 'center' }} onPress={() => onNavigate('qr-pair')}>
-              <Text style={{ color: '#fbbf24', fontSize: 12, fontWeight: '600' }}>QR Pair & LAN Setup</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Send Message */}
-        <View style={s.card}>
-          <Text style={s.cardH}>SEND ENCRYPTED MESSAGE</Text>
-          <Text style={s.desc}>Select a peer and type your message. Encrypted with nacl.box — only the recipient can read it.</Text>
-
-          {/* Peer selector */}
-          <Text style={s.labelSmall}>Recipient</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.peerScroll}>
-            {peers.length === 0 ? (
-              <Text style={s.noPeers}>No peers found. Pull to refresh.</Text>
-            ) : (
-              peers.map(peer => (
-                <TouchableOpacity
-                  key={peer.deviceId}
-                  style={[s.peerChip, selectedPeer?.deviceId === peer.deviceId && s.peerChipActive]}
-                  onPress={() => setSelectedPeer(peer)}
-                >
-                  <Text style={[s.peerChipText, selectedPeer?.deviceId === peer.deviceId && s.peerChipTextActive]}>
-                    {peer.name || peer.deviceId.substring(0, 12)}
+      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+        {activeTab === 'mesh' ? (
+          <>
+            {/* Node Status */}
+            <Card style={s.section}>
+              <View style={s.sectionHeader}>
+                <Text style={s.sectionLabel}>NODE STATUS</Text>
+                <StatusBadge
+                  label={transportType.toUpperCase()}
+                  color={transportType === 'ble' ? colors.status.success : colors.accent.blue}
+                />
+              </View>
+              <View style={s.nodeGrid}>
+                <View style={s.nodeStatBox}>
+                  <Text style={[s.nodeStatValue, { color: batteryLevel > 0.5 ? colors.status.success : colors.status.warning }]}>
+                    {(batteryLevel * 100).toFixed(0)}%
                   </Text>
-                  <Text style={s.peerRole}>{peer.role}</Text>
+                  <Text style={s.nodeStatLabel}>Battery</Text>
+                </View>
+                <View style={s.nodeStatBox}>
+                  <Text style={[s.nodeStatValue, { color: signalStrength > 0.6 ? colors.status.success : colors.status.warning }]}>
+                    {(signalStrength * 100).toFixed(0)}%
+                  </Text>
+                  <Text style={s.nodeStatLabel}>Signal</Text>
+                </View>
+                <View style={s.nodeStatBox}>
+                  <Text style={[s.nodeStatValue, { color: colors.accent.blue }]}>{connectedPeers}</Text>
+                  <Text style={s.nodeStatLabel}>Peers</Text>
+                </View>
+                {nodeRole === 'relay' && (
+                  <View style={s.nodeStatBox}>
+                    <Text style={[s.nodeStatValue, { color: colors.module.auth }]}>{relayedCount}</Text>
+                    <Text style={s.nodeStatLabel}>Relayed</Text>
+                  </View>
+                )}
+              </View>
+              <View style={s.transportRow}>
+                <InfoRow label="Transport" value={transportType === 'ble' ? 'Bluetooth Direct' : 'Server Relay'} compact />
+                <InfoRow label="Box Key" value={boxPublicKey ? `${boxPublicKey.substring(0, 20)}...` : 'Not set'} valueColor={colors.accent.blueLight} compact />
+              </View>
+            </Card>
+
+            {/* Peers & Send */}
+            <Card style={s.section}>
+              <View style={s.sectionHeader}>
+                <Text style={s.sectionLabel}>SEND MESSAGE</Text>
+                <TouchableOpacity onPress={fetchAndCachePeers}>
+                  <Text style={s.refreshLink}>Refresh Peers</Text>
                 </TouchableOpacity>
-              ))
+              </View>
+              <Text style={s.hint}>End-to-end encrypted with NaCl box. Only the recipient can decrypt.</Text>
+
+              {/* Peer List */}
+              {peers.length === 0 ? (
+                <View style={s.noPeersWrap}>
+                  <Text style={s.noPeersText}>No peers found</Text>
+                  <ActionButton title="Add Peer via QR" onPress={() => onNavigate?.('qr-pair')} variant="outline" size="sm" />
+                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.peerList}>
+                  {peers.map(peer => (
+                    <TouchableOpacity
+                      key={peer.deviceId}
+                      style={[s.peerCard, selectedPeer?.deviceId === peer.deviceId && s.peerCardActive]}
+                      onPress={() => setSelectedPeer(peer)}
+                    >
+                      <View style={[s.peerAvatar, selectedPeer?.deviceId === peer.deviceId && s.peerAvatarActive]}>
+                        <Text style={s.peerAvatarText}>{(peer.name || peer.deviceId)[0].toUpperCase()}</Text>
+                      </View>
+                      <Text style={[s.peerName, selectedPeer?.deviceId === peer.deviceId && s.peerNameActive]} numberOfLines={1}>
+                        {peer.name || peer.deviceId.substring(0, 10)}
+                      </Text>
+                      <Text style={s.peerRole}>{peer.role}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+
+              <TextInput
+                style={s.msgInput}
+                placeholder="Type your message..."
+                placeholderTextColor={colors.text.muted}
+                value={messageText}
+                onChangeText={setMessageText}
+                multiline
+              />
+              <ActionButton
+                title={sending ? 'Encrypting...' : 'Send Encrypted'}
+                onPress={handleSend}
+                disabled={!selectedPeer || !messageText.trim() || sending}
+                loading={sending}
+                variant="primary"
+                fullWidth
+              />
+            </Card>
+
+            {/* Inbox */}
+            <Card style={s.section}>
+              <View style={s.sectionHeader}>
+                <Text style={s.sectionLabel}>INBOX ({deliveredInbox.length})</Text>
+                <TouchableOpacity onPress={checkInbox}>
+                  <Text style={s.refreshLink}>Refresh</Text>
+                </TouchableOpacity>
+              </View>
+              {deliveredInbox.length === 0 ? (
+                <EmptyState title="No messages" message="Incoming encrypted messages will appear here" />
+              ) : (
+                deliveredInbox.slice(0, 20).map(msg => (
+                  <TouchableOpacity key={msg.id} style={s.msgCard} onPress={() => handleDecrypt(msg)}>
+                    <View style={s.msgHeader}>
+                      <View style={s.msgFrom}>
+                        <View style={s.msgAvatar}>
+                          <Text style={s.msgAvatarText}>{msg.sourceDeviceId[0].toUpperCase()}</Text>
+                        </View>
+                        <View>
+                          <Text style={s.msgSender}>{msg.sourceDeviceId.substring(0, 14)}...</Text>
+                          <Text style={s.msgTime}>{new Date(msg.createdAt).toLocaleTimeString()}</Text>
+                        </View>
+                      </View>
+                      <StatusBadge label="E2E" color={colors.status.success} size="sm" />
+                    </View>
+                    <View style={s.msgContent}>
+                      <Text style={s.msgText}>
+                        {expandedMsg === msg.id && decryptedCache[msg.id] ? decryptedCache[msg.id] : 'Tap to decrypt'}
+                      </Text>
+                    </View>
+                    <View style={s.msgMeta}>
+                      <Text style={s.msgMetaText}>Hops: {msg.hopCount}</Text>
+                      <Text style={s.msgMetaText}>TTL: {msg.ttl}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </Card>
+
+            {/* Outbox */}
+            <Card style={s.section}>
+              <View style={s.sectionHeader}>
+                <Text style={s.sectionLabel}>OUTBOX ({outbox.length})</Text>
+                <TouchableOpacity onPress={flushOutbox}>
+                  <Text style={s.refreshLink}>{isFlushingQueue ? 'Flushing...' : 'Flush'}</Text>
+                </TouchableOpacity>
+              </View>
+              {pendingOutbox.length > 0 && (
+                <View style={s.queueBanner}>
+                  <Text style={s.queueText}>{pendingOutbox.length} message(s) queued</Text>
+                </View>
+              )}
+              {outbox.length === 0 ? (
+                <EmptyState title="No sent messages" />
+              ) : (
+                outbox.slice(0, 10).map(msg => (
+                  <View key={msg.id} style={s.msgCard}>
+                    <View style={s.msgHeader}>
+                      <Text style={s.msgSender}>To: {msg.targetDeviceId.substring(0, 14)}...</Text>
+                      <StatusBadge
+                        label={msg.status}
+                        color={msg.status === 'delivered' ? colors.status.success : msg.status === 'relayed' ? colors.accent.blue : msg.status === 'expired' ? colors.status.error : colors.status.warning}
+                      />
+                    </View>
+                    <View style={s.msgMeta}>
+                      <Text style={s.msgMetaText}>TTL: {msg.ttl}</Text>
+                      <Text style={s.msgMetaText}>Hops: {msg.hopCount}</Text>
+                    </View>
+                  </View>
+                ))
+              )}
+              {lastFlushAt && <Text style={s.lastFlush}>Last flush: {new Date(lastFlushAt).toLocaleTimeString()}</Text>}
+            </Card>
+
+            {/* Role History */}
+            {roleHistory.length > 0 && (
+              <Card style={s.section}>
+                <Text style={s.sectionLabel}>ROLE HISTORY</Text>
+                {roleHistory.slice(0, 5).map((sw, i) => (
+                  <View key={i} style={s.historyItem}>
+                    <View style={s.historyHeader}>
+                      <View style={s.historyBadges}>
+                        <StatusBadge label={sw.from} color={colors.text.muted} size="sm" />
+                        <Text style={s.historyArrow}>{'\u2192'}</Text>
+                        <StatusBadge
+                          label={sw.to}
+                          color={sw.to === 'relay' ? colors.status.success : colors.accent.blue}
+                          size="sm"
+                        />
+                      </View>
+                      <Text style={s.historyTime}>{new Date(sw.timestamp).toLocaleTimeString()}</Text>
+                    </View>
+                    <Text style={s.historyReason}>{sw.reason}</Text>
+                  </View>
+                ))}
+              </Card>
             )}
-          </ScrollView>
-
-          <TextInput
-            style={s.input}
-            placeholder="Type your message..."
-            placeholderTextColor="#6b7280"
-            value={messageText}
-            onChangeText={setMessageText}
-            multiline
-          />
-
-          <TouchableOpacity
-            style={[s.sendBtn, (!selectedPeer || !messageText.trim() || sending) && s.sendBtnDisabled]}
-            onPress={handleSend}
-            disabled={!selectedPeer || !messageText.trim() || sending}
-          >
-            <Text style={s.sendBtnText}>{sending ? 'Encrypting & Sending...' : 'Send Encrypted'}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Inbox */}
-        <View style={s.card}>
-          <View style={s.cardHeaderRow}>
-            <Text style={s.cardH}>INBOX ({deliveredInbox.length})</Text>
-            <TouchableOpacity onPress={checkInbox}>
-              <Text style={s.refreshLink}>Refresh</Text>
-            </TouchableOpacity>
-          </View>
-          {deliveredInbox.length === 0 ? (
-            <Text style={s.emptyText}>No messages yet</Text>
-          ) : (
-            deliveredInbox.slice(0, 20).map(msg => (
-              <TouchableOpacity key={msg.id} style={s.msgCard} onPress={() => handleDecrypt(msg)}>
-                <View style={s.msgHeader}>
-                  <Text style={s.msgFrom}>From: {msg.sourceDeviceId.substring(0, 16)}...</Text>
-                  <Text style={s.msgTime}>{new Date(msg.createdAt).toLocaleTimeString()}</Text>
+          </>
+        ) : (
+          /* SYNC TAB */
+          <>
+            {/* Your Device */}
+            <Card style={s.section}>
+              <Text style={s.sectionLabel}>YOUR DEVICE</Text>
+              <TouchableOpacity onPress={() => {
+                if (deviceId) { Clipboard.setString(deviceId); Alert.alert('Copied', 'Device ID copied. Share with peer.'); }
+              }}>
+                <View style={s.deviceIdBox}>
+                  <Text style={s.deviceIdIcon}>{'\u2B22'}</Text>
+                  <Text style={s.deviceIdText} numberOfLines={2} selectable>{deviceId || 'none'}</Text>
                 </View>
-                <View style={s.msgBody}>
-                  <View style={s.encBadge}>
-                    <Text style={s.encBadgeText}>E2E</Text>
-                  </View>
-                  <Text style={s.msgPreview}>
-                    {expandedMsg === msg.id && decryptedCache[msg.id]
-                      ? decryptedCache[msg.id]
-                      : 'Tap to decrypt'}
-                  </Text>
-                </View>
-                <Row label="Hops" value={String(msg.hopCount)} />
-                <Row label="TTL" value={String(msg.ttl)} />
               </TouchableOpacity>
-            ))
-          )}
-        </View>
+              <Text style={s.hint}>Tap to copy. Share with the other device for sync.</Text>
+            </Card>
 
-        {/* Outbox / Queue */}
-        <View style={s.card}>
-          <View style={s.cardHeaderRow}>
-            <Text style={s.cardH}>OUTBOX ({outbox.length})</Text>
-            <TouchableOpacity onPress={flushOutbox}>
-              <Text style={s.refreshLink}>{isFlushingQueue ? 'Flushing...' : 'Flush'}</Text>
-            </TouchableOpacity>
-          </View>
-          {pendingOutbox.length > 0 && (
-            <View style={s.queueBanner}>
-              <Text style={s.queueText}>{pendingOutbox.length} message(s) queued for delivery</Text>
-            </View>
-          )}
-          {outbox.length === 0 ? (
-            <Text style={s.emptyText}>No sent messages</Text>
-          ) : (
-            outbox.slice(0, 10).map(msg => (
-              <View key={msg.id} style={s.msgCard}>
-                <View style={s.msgHeader}>
-                  <Text style={s.msgFrom}>To: {msg.targetDeviceId.substring(0, 16)}...</Text>
-                  <View style={[s.statusBadge, statusColor(msg.status)]}>
-                    <Text style={s.statusText}>{msg.status}</Text>
-                  </View>
-                </View>
-                <Row label="TTL" value={String(msg.ttl)} />
-                <Row label="Hops" value={String(msg.hopCount)} />
-              </View>
-            ))
-          )}
-          {lastFlushAt && <Text style={s.lastFlush}>Last flush: {new Date(lastFlushAt).toLocaleTimeString()}</Text>}
-        </View>
+            {/* Direct Exchange */}
+            <Card style={s.section}>
+              <Text style={s.sectionLabel}>DIRECT EXCHANGE</Text>
+              <Text style={s.hint}>Exchange CRDT states with all connected devices via relay. Uses delta-sync: only sends records the peer hasn't seen.</Text>
+              <ActionButton
+                title={syncStatus === 'syncing' ? 'Syncing...' : 'Exchange Now'}
+                onPress={handleP2PSync}
+                loading={syncStatus === 'syncing'}
+                variant="primary"
+                fullWidth
+                style={{ marginTop: spacing.md }}
+              />
+            </Card>
 
-        {/* Role History */}
-        {roleHistory.length > 0 && (
-          <View style={s.card}>
-            <Text style={s.cardH}>ROLE HISTORY</Text>
-            {roleHistory.slice(0, 5).map((sw, i) => (
-              <View key={i} style={s.historyRow}>
-                <View style={s.historyHeader}>
-                  <Text style={s.historySwitch}>{sw.from} {'->'} {sw.to}</Text>
-                  <Text style={s.historyTime}>{new Date(sw.timestamp).toLocaleTimeString()}</Text>
-                </View>
-                <Text style={s.historyReason}>{sw.reason}</Text>
-              </View>
-            ))}
-          </View>
+            {/* Device Mailbox */}
+            <Card style={s.section}>
+              <Text style={s.sectionLabel}>DEVICE-TO-DEVICE MAILBOX</Text>
+              <Text style={s.hint}>Send changes to a specific device. They pick up when online.</Text>
+              <TextInput
+                style={s.input}
+                placeholder="Peer Device ID"
+                placeholderTextColor={colors.text.muted}
+                value={peerDeviceId}
+                onChangeText={setPeerDeviceId}
+              />
+              <ActionButton
+                title="Send & Receive"
+                onPress={handleMailboxSync}
+                disabled={!peerDeviceId.trim() || syncStatus === 'syncing'}
+                loading={syncStatus === 'syncing'}
+                variant="secondary"
+                fullWidth
+              />
+            </Card>
+
+            {/* Sync Stats */}
+            {syncStats && (
+              <Card style={s.section} variant="accent" accentColor={syncStatus === 'done' ? colors.status.success : colors.status.error}>
+                <Text style={s.sectionLabel}>SYNC RESULT</Text>
+                <InfoRow label="Status" value={syncStatus === 'done' ? 'Success' : 'Error'} valueColor={syncStatus === 'done' ? colors.status.success : colors.status.error} />
+                <InfoRow label="Records sent" value={String(syncStats.recordsSent)} />
+                <InfoRow label="Records received" value={String(syncStats.recordsReceived)} />
+                <InfoRow label="Bytes out" value={`${syncStats.bytesOut} B`} />
+                <InfoRow label="Bytes in" value={`${syncStats.bytesIn} B`} />
+                <InfoRow
+                  label="Total transfer"
+                  value={syncStats.totalBytes < 10240 ? `${syncStats.totalBytes} B (< 10KB)` : `${(syncStats.totalBytes / 1024).toFixed(1)} KB`}
+                  valueColor={syncStats.totalBytes < 10240 ? colors.status.success : colors.status.warning}
+                />
+                <InfoRow label="Delta sync" value={syncStats.deltaSync ? 'Yes' : 'Full sync'} />
+              </Card>
+            )}
+
+            {syncStatus === 'error' && syncError && (
+              <Card variant="accent" accentColor={colors.status.error}>
+                <Text style={s.errorText}>{syncError}</Text>
+              </Card>
+            )}
+          </>
         )}
 
-        {/* Refresh Peers */}
-        <TouchableOpacity style={s.refreshBtn} onPress={fetchAndCachePeers}>
-          <Text style={s.refreshBtnText}>Refresh Peers</Text>
-        </TouchableOpacity>
+        <View style={{ height: spacing['3xl'] }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function Row({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <View style={s.stateRow}>
-      <Text style={s.stateLabel}>{label}</Text>
-      <Text style={[s.stateValue, color ? { color } : undefined]} numberOfLines={1}>{value}</Text>
-    </View>
-  );
-}
-
-function statusColor(status: string): { backgroundColor: string; borderColor: string } {
-  switch (status) {
-    case 'delivered': return { backgroundColor: 'rgba(34,197,94,0.15)', borderColor: '#166534' };
-    case 'relayed': return { backgroundColor: 'rgba(59,130,246,0.15)', borderColor: '#2563eb' };
-    case 'expired': return { backgroundColor: 'rgba(239,68,68,0.15)', borderColor: '#991b1b' };
-    default: return { backgroundColor: 'rgba(249,115,22,0.15)', borderColor: '#ea580c' };
-  }
-}
-
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#030712' },
-  content: { padding: 20, paddingTop: 16, paddingBottom: 40 },
-  backBtn: { color: '#60a5fa', fontSize: 14, marginBottom: 16 },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
-  subtitle: { fontSize: 13, color: '#9ca3af', marginTop: 2, marginBottom: 20 },
+  safe: { flex: 1, backgroundColor: colors.bg.primary },
 
-  card: { backgroundColor: '#111827', borderWidth: 1, borderColor: '#374151', borderRadius: 14, padding: 16, marginBottom: 16 },
-  cardH: { fontSize: 11, fontWeight: 'bold', color: '#9ca3af', letterSpacing: 1, marginBottom: 8 },
-  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  desc: { fontSize: 13, color: '#6b7280', marginBottom: 12, lineHeight: 18 },
+  // Header
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: colors.border.default,
+  },
+  headerTitle: { ...textStyles.h3, color: colors.text.primary },
+  headerSub: { fontSize: fontSize.sm, color: colors.text.muted, marginTop: 1 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
 
-  // Node status
-  roleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  roleBadge: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 4, marginRight: 10 },
-  relayBadge: { backgroundColor: 'rgba(34,197,94,0.15)', borderColor: '#166534' },
-  clientBadge: { backgroundColor: 'rgba(59,130,246,0.15)', borderColor: '#2563eb' },
-  roleBadgeText: { fontSize: 12, fontWeight: 'bold' },
-  relayText: { color: '#22c55e' },
-  clientText: { color: '#60a5fa' },
-  roleSub: { fontSize: 12, color: '#6b7280', flex: 1 },
+  // Tabs
+  tabBar: {
+    flexDirection: 'row', backgroundColor: colors.bg.card,
+    borderBottomWidth: 1, borderBottomColor: colors.border.default,
+    paddingHorizontal: spacing.lg,
+  },
+  tab: {
+    flex: 1, paddingVertical: spacing.md,
+    alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent',
+  },
+  tabActive: { borderBottomColor: colors.accent.blue },
+  tabText: { fontSize: fontSize.base, fontWeight: fontWeight.medium, color: colors.text.muted },
+  tabTextActive: { color: colors.accent.blue, fontWeight: fontWeight.semibold },
 
-  // Peer selector
-  labelSmall: { fontSize: 12, color: '#6b7280', marginBottom: 6 },
-  peerScroll: { marginBottom: 10 },
-  peerChip: { borderWidth: 1, borderColor: '#374151', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginRight: 8, minWidth: 100 },
-  peerChipActive: { borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,0.15)' },
-  peerChipText: { color: '#d1d5db', fontSize: 13, fontWeight: '600' },
-  peerChipTextActive: { color: '#c4b5fd' },
-  peerRole: { color: '#6b7280', fontSize: 11, marginTop: 2 },
-  noPeers: { color: '#6b7280', fontSize: 13, fontStyle: 'italic' },
+  // Content
+  content: { padding: spacing.lg },
 
-  // Input & send
-  input: { backgroundColor: '#1f2937', borderWidth: 1, borderColor: '#374151', borderRadius: 10, padding: 12, color: '#fff', fontSize: 14, marginBottom: 10, minHeight: 60, textAlignVertical: 'top' },
-  sendBtn: { backgroundColor: '#7c3aed', borderRadius: 10, padding: 12, alignItems: 'center' },
-  sendBtnDisabled: { opacity: 0.5 },
-  sendBtnText: { color: '#e9d5ff', fontSize: 14, fontWeight: '600' },
+  // Sections
+  section: { marginBottom: spacing.lg },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  sectionLabel: { ...textStyles.label, color: colors.text.muted, marginBottom: spacing.sm },
+  hint: { fontSize: fontSize.sm, color: colors.text.muted, marginBottom: spacing.md, lineHeight: 18 },
+  refreshLink: { color: colors.accent.blue, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+
+  // Node stats
+  nodeGrid: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  nodeStatBox: {
+    flex: 1, backgroundColor: colors.bg.elevated,
+    borderRadius: radius.md, padding: spacing.md, alignItems: 'center',
+  },
+  nodeStatValue: { fontSize: fontSize.xl, fontWeight: fontWeight.bold },
+  nodeStatLabel: { fontSize: fontSize.xs, color: colors.text.muted, marginTop: spacing.xs },
+  transportRow: {},
+
+  // Peers
+  peerList: { marginBottom: spacing.md },
+  noPeersWrap: { alignItems: 'center', gap: spacing.md, paddingVertical: spacing.lg },
+  noPeersText: { color: colors.text.muted, fontSize: fontSize.md },
+  peerCard: {
+    alignItems: 'center', padding: spacing.md,
+    backgroundColor: colors.bg.elevated, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border.default,
+    marginRight: spacing.sm, minWidth: 90,
+  },
+  peerCardActive: { borderColor: colors.accent.blue, backgroundColor: colors.accent.blueMuted },
+  peerAvatar: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: colors.border.default,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs,
+  },
+  peerAvatarActive: { backgroundColor: colors.accent.blue },
+  peerAvatarText: { color: colors.text.primary, fontSize: fontSize.base, fontWeight: fontWeight.bold },
+  peerName: { fontSize: fontSize.sm, color: colors.text.secondary, fontWeight: fontWeight.medium },
+  peerNameActive: { color: colors.accent.blueLight },
+  peerRole: { fontSize: fontSize.xs, color: colors.text.muted, marginTop: 2 },
+
+  // Message input
+  msgInput: {
+    backgroundColor: colors.bg.elevated, borderWidth: 1, borderColor: colors.border.default,
+    borderRadius: radius.md, padding: spacing.md, color: colors.text.primary,
+    fontSize: fontSize.base, marginBottom: spacing.md, minHeight: 60, textAlignVertical: 'top',
+  },
+  input: {
+    backgroundColor: colors.bg.elevated, borderWidth: 1, borderColor: colors.border.default,
+    borderRadius: radius.md, padding: spacing.md, color: colors.text.primary,
+    fontSize: fontSize.base, marginBottom: spacing.md,
+  },
 
   // Messages
-  msgCard: { backgroundColor: '#1f2937', borderRadius: 10, padding: 12, marginTop: 8, borderWidth: 1, borderColor: '#374151' },
-  msgHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  msgFrom: { color: '#d1d5db', fontSize: 13, fontWeight: '600' },
-  msgTime: { color: '#6b7280', fontSize: 11 },
-  msgBody: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 },
-  encBadge: { backgroundColor: 'rgba(34,197,94,0.15)', borderWidth: 1, borderColor: '#166534', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1, marginRight: 8 },
-  encBadgeText: { color: '#22c55e', fontSize: 10, fontWeight: 'bold' },
-  msgPreview: { color: '#9ca3af', fontSize: 13, flex: 1 },
-
-  // Status badges
-  statusBadge: { borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
-  statusText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
+  msgCard: {
+    backgroundColor: colors.bg.elevated, borderRadius: radius.md,
+    padding: spacing.md, marginTop: spacing.sm,
+    borderWidth: 1, borderColor: colors.border.default,
+  },
+  msgHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  msgFrom: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
+  msgAvatar: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: colors.accent.blueMuted,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  msgAvatarText: { color: colors.accent.blue, fontSize: fontSize.sm, fontWeight: fontWeight.bold },
+  msgSender: { fontSize: fontSize.md, color: colors.text.secondary, fontWeight: fontWeight.medium },
+  msgTime: { fontSize: fontSize.xs, color: colors.text.muted },
+  msgContent: {
+    backgroundColor: colors.bg.card, borderRadius: radius.sm,
+    padding: spacing.sm, marginBottom: spacing.sm,
+  },
+  msgText: { fontSize: fontSize.md, color: colors.text.tertiary },
+  msgMeta: { flexDirection: 'row', gap: spacing.lg },
+  msgMetaText: { fontSize: fontSize.xs, color: colors.text.muted },
 
   // Queue
-  queueBanner: { backgroundColor: 'rgba(249,115,22,0.1)', borderRadius: 8, padding: 8, marginBottom: 8 },
-  queueText: { color: '#fb923c', fontSize: 12, textAlign: 'center' },
-
-  // Shared
-  stateRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
-  stateLabel: { fontSize: 13, color: '#6b7280' },
-  stateValue: { fontSize: 13, color: '#d1d5db', flex: 1, textAlign: 'right' },
-
-  refreshLink: { color: '#60a5fa', fontSize: 12, fontWeight: '600' },
-  emptyText: { color: '#6b7280', fontSize: 13, fontStyle: 'italic', textAlign: 'center', paddingVertical: 12 },
-  lastFlush: { color: '#6b7280', fontSize: 11, textAlign: 'center', marginTop: 8 },
+  queueBanner: {
+    backgroundColor: colors.status.warningMuted,
+    borderRadius: radius.sm, padding: spacing.sm, marginBottom: spacing.sm,
+  },
+  queueText: { color: colors.status.warning, fontSize: fontSize.sm, textAlign: 'center', fontWeight: fontWeight.medium },
+  lastFlush: { color: colors.text.muted, fontSize: fontSize.xs, textAlign: 'center', marginTop: spacing.sm },
 
   // Role history
-  historyRow: { borderTopWidth: 1, borderTopColor: '#374151', paddingTop: 8, marginTop: 8 },
-  historyHeader: { flexDirection: 'row', justifyContent: 'space-between' },
-  historySwitch: { color: '#d1d5db', fontSize: 13, fontWeight: '600' },
-  historyTime: { color: '#6b7280', fontSize: 11 },
-  historyReason: { color: '#9ca3af', fontSize: 12, marginTop: 2 },
+  historyItem: { borderTopWidth: 1, borderTopColor: colors.border.default, paddingTop: spacing.sm, marginTop: spacing.sm },
+  historyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  historyBadges: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  historyArrow: { color: colors.text.muted, fontSize: 14 },
+  historyTime: { fontSize: fontSize.xs, color: colors.text.muted },
+  historyReason: { fontSize: fontSize.sm, color: colors.text.tertiary, marginTop: spacing.xs },
 
-  // Bottom buttons
-  refreshBtn: { backgroundColor: '#1e3a5f', borderRadius: 12, padding: 14, alignItems: 'center', marginBottom: 16 },
-  refreshBtnText: { color: '#93c5fd', fontSize: 14, fontWeight: '600' },
+  // Device ID
+  deviceIdBox: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.bg.elevated, borderRadius: radius.md,
+    padding: spacing.md, gap: spacing.sm,
+  },
+  deviceIdIcon: { fontSize: 14, color: colors.accent.blue },
+  deviceIdText: { color: colors.text.tertiary, fontSize: fontSize.sm, flex: 1 },
+
+  // Error
+  errorText: { color: colors.status.error, fontSize: fontSize.md },
 });

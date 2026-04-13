@@ -11,10 +11,14 @@ import QRPairScreen from './src/screens/QRPairScreen';
 import RouteMapScreen from './src/screens/RouteMapScreen';
 import DeliveryScreen from './src/screens/DeliveryScreen';
 import TriageScreen from './src/screens/TriageScreen';
+import { BottomTabBar } from './src/components/BottomTabBar';
 import { useAuthStore } from './src/lib/useAuthStore';
 import { log } from './src/lib/debug';
 
-type Screen = 'login' | 'dashboard' | 'p2p' | 'mesh' | 'qr-pair' | 'routes' | 'delivery' | 'triage';
+type Screen = 'login' | 'dashboard' | 'p2p' | 'mesh' | 'qr-pair' | 'routes' | 'delivery' | 'triage' | 'predictions';
+
+// Screens that show the bottom tab bar
+const TAB_SCREENS = new Set<Screen>(['dashboard', 'routes', 'delivery', 'mesh', 'triage']);
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -53,25 +57,38 @@ export default function App() {
       if (s === 'Main' || s === 'dashboard') setScreen('dashboard');
       else if (s === 'Login' || s === 'login') setScreen('login');
       else if (s === 'p2p') setScreen('p2p');
-      else if (s === 'mesh') setScreen('mesh')
-      else if (s === 'qr-pair') setScreen('qr-pair')
-      else if (s === 'routes') setScreen('routes')
+      else if (s === 'mesh') setScreen('mesh');
+      else if (s === 'qr-pair') setScreen('qr-pair');
+      else if (s === 'routes') setScreen('routes');
       else if (s === 'delivery') setScreen('delivery');
       else if (s === 'triage') setScreen('triage');
+      else if (s === 'predictions') setScreen('predictions');
     },
   };
+
+  const showTabs = isAuthenticated && TAB_SCREENS.has(screen);
 
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
-      {screen === 'login' && <LoginScreen navigation={nav} />}
-      {screen === 'dashboard' && <DashboardScreen navigation={nav} />}
-      {screen === 'p2p' && <P2PSyncScreen onBack={() => setScreen('dashboard')} />}
-      {screen === 'mesh' && <MeshScreen onBack={() => setScreen('dashboard')} onNavigate={(s: string) => setScreen(s as Screen)} />}
-      {screen === 'qr-pair' && <QRPairScreen onBack={() => setScreen('dashboard')} />}
-      {screen === 'routes' && <RouteMapScreen onBack={() => setScreen('dashboard')} />}
-      {screen === 'delivery' && <DeliveryScreen onBack={() => setScreen('dashboard')} />}
-      {screen === 'triage' && <TriageScreen onBack={() => setScreen('dashboard')} />}
+      <View style={{ flex: 1, backgroundColor: '#030712' }}>
+        <View style={{ flex: 1 }}>
+          {screen === 'login' && <LoginScreen navigation={nav} />}
+          {screen === 'dashboard' && <DashboardScreen navigation={nav} />}
+          {screen === 'p2p' && <P2PSyncScreen onBack={() => setScreen('dashboard')} />}
+          {screen === 'mesh' && <MeshScreen onBack={() => setScreen('dashboard')} onNavigate={(s: string) => setScreen(s as Screen)} />}
+          {screen === 'qr-pair' && <QRPairScreen onBack={() => setScreen('dashboard')} />}
+          {screen === 'routes' && <RouteMapScreen onBack={() => setScreen('dashboard')} />}
+          {screen === 'delivery' && <DeliveryScreen onBack={() => setScreen('dashboard')} />}
+          {screen === 'triage' && <TriageScreen onBack={() => setScreen('dashboard')} />}
+        </View>
+        {showTabs && (
+          <BottomTabBar
+            activeScreen={screen}
+            onNavigate={(s) => setScreen(s as Screen)}
+          />
+        )}
+      </View>
     </SafeAreaProvider>
   );
 }
