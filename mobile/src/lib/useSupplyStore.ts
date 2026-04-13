@@ -52,6 +52,7 @@ interface SupplyState {
   syncWithServer: () => Promise<void>;
   resolveConflict: (supplyId: string, field: string, chosenValue: unknown, choice: 'local' | 'remote') => Promise<void>;
   dismissConflicts: () => void;
+  resetState: () => void;
 }
 
 function generateId(): string {
@@ -422,5 +423,16 @@ export const useSupplyStore = create<SupplyState>((set, get) => ({
 
   dismissConflicts: () => {
     set({ pendingConflicts: [] });
+  },
+
+  resetState: () => {
+    set({
+      supplies: [],
+      pendingCount: 0,
+      syncStatus: 'idle',
+      lastSyncAt: null,
+      conflicts: [],
+      pendingConflicts: [],
+    });
   },
 }));

@@ -16,6 +16,9 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { api } from '../lib/api';
 import { useAuthStore } from '../lib/useAuthStore';
 import { useSupplyStore } from '../lib/useSupplyStore';
+import { useTriageStore } from '../lib/useTriageStore';
+import { useMeshStore } from '../lib/useMeshStore';
+import { clearAllTables } from '../lib/database';
 import { Card } from '../components/Card';
 import { ActionButton } from '../components/ActionButton';
 import { StatusBadge } from '../components/StatusBadge';
@@ -53,7 +56,10 @@ export default function DashboardScreen({ navigation }: any) {
     conflicts, pendingConflicts,
     loadSupplies, createSupply, updateSupply,
     syncWithServer, resolveConflict, dismissConflicts,
+    resetState: resetSupplyState,
   } = useSupplyStore();
+  const { resetState: resetTriageState } = useTriageStore();
+  const { resetState: resetMeshState } = useMeshStore();
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -140,6 +146,32 @@ export default function DashboardScreen({ navigation }: any) {
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Reset', style: 'destructive', onPress: async () => { await resetDevice(); navigation.replace('Login'); } },
+      ],
+    );
+  };
+
+  const handleDeleteAllData = () => {
+    Alert.alert(
+      'Delete All Data',
+      'This will permanently delete ALL app data including supplies, messages, deliveries, sync state, keys, and identity. You will need to re-register. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await clearAllTables();
+              resetSupplyState();
+              resetTriageState();
+              resetMeshState();
+              await resetDevice();
+              navigation.replace('Login');
+            } catch (err) {
+              Alert.alert('Error', 'Failed to delete data: ' + (err as Error).message);
+            }
+          },
+        },
       ],
     );
   };
@@ -336,6 +368,7 @@ export default function DashboardScreen({ navigation }: any) {
               <View style={{ width: spacing.sm }} />
               <ActionButton title="Reset Device" onPress={handleResetDevice} variant="destructive" size="sm" style={{ flex: 1 }} />
             </View>
+            <ActionButton title="Delete All Data" onPress={handleDeleteAllData} variant="destructive" style={{ marginTop: spacing.sm }} fullWidth />
             <ActionButton title="Close" onPress={() => setShowSettings(false)} variant="ghost" style={{ marginTop: spacing.md }} />
           </View>
         </View>

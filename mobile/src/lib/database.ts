@@ -398,3 +398,22 @@ export async function saveVectorClock(clock: Record<string, number>): Promise<vo
     [JSON.stringify(clock)],
   );
 }
+
+// --- Clear all data ---
+
+export async function clearAllTables(): Promise<void> {
+  const database = await getDatabase();
+  await database.execAsync(`
+    DELETE FROM supplies;
+    DELETE FROM sync_state;
+    DELETE FROM mesh_messages;
+    DELETE FROM mesh_peers;
+    DELETE FROM mesh_node_state;
+    DELETE FROM cached_nodes;
+    DELETE FROM cached_edges;
+    DELETE FROM local_deliveries;
+    DELETE FROM used_nonces;
+    DELETE FROM local_triage_decisions;
+    DELETE FROM pod_receipts;
+  `);
+}

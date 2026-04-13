@@ -70,6 +70,7 @@ interface MeshState {
   updateRoleHeuristics: (battery: number, signal: number, peerCount: number) => void;
   fetchAndCachePeers: () => Promise<void>;
   loadLocalMessages: () => Promise<void>;
+  resetState: () => void;
 }
 
 let _deviceId = '';
@@ -382,6 +383,15 @@ export const useMeshStore = create<MeshState>((set, get) => ({
   /**
    * Fetch peers from server and cache locally for offline use.
    */
+  resetState: () => {
+    set({
+      inbox: [],
+      outbox: [],
+      allMessages: [],
+      peers: [],
+    });
+  },
+
   fetchAndCachePeers: async () => {
     // Get peers from all transports (BLE nearby + HTTP server), deduplicated
     const peers = await transportManager.getPeers();

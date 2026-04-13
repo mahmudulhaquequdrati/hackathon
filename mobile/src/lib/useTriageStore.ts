@@ -16,6 +16,7 @@ interface TriageState {
   runEvaluation: () => Promise<void>;
   executePreemption: (deliveryId: string) => Promise<void>;
   fetchDecisions: () => Promise<void>;
+  resetState: () => void;
 }
 
 export const useTriageStore = create<TriageState>((set, get) => ({
@@ -73,5 +74,17 @@ export const useTriageStore = create<TriageState>((set, get) => ({
     } catch (err) {
       log('error', 'Failed to fetch decisions', (err as Error).message);
     }
+  },
+
+  resetState: () => {
+    set({
+      priorities: [],
+      evaluations: [],
+      decisions: [],
+      loading: false,
+      lastEvaluatedAt: null,
+      breachCount: 0,
+      warningCount: 0,
+    });
   },
 }));
