@@ -130,6 +130,7 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   try { await db.execAsync('ALTER TABLE mesh_peers ADD COLUMN ip_address TEXT'); } catch {}
   try { await db.execAsync('ALTER TABLE mesh_peers ADD COLUMN port INTEGER'); } catch {}
   try { await db.execAsync('ALTER TABLE local_deliveries ADD COLUMN route_data TEXT'); } catch {}
+  try { await db.execAsync('ALTER TABLE local_deliveries ADD COLUMN deleted_locally INTEGER NOT NULL DEFAULT 0'); } catch {}
 
   return db;
 }

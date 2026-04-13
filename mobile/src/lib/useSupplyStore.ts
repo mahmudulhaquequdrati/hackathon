@@ -269,7 +269,10 @@ export const useSupplyStore = create<SupplyState>((set, get) => ({
       try {
         const delRes = await api.get<{ data: { deliveries: any[] } }>('/delivery/');
         const deliveries = delRes.data.deliveries || [];
+        const deletedRows = await db.getAllAsync<{ id: string }>('SELECT id FROM local_deliveries WHERE deleted_locally = 1');
+        const deletedIds = new Set(deletedRows.map((r: { id: string }) => r.id));
         for (const d of deliveries) {
+          if (deletedIds.has(d.id)) continue;
           await db.upsertLocalDelivery(d);
         }
         log('info', `Synced ${deliveries.length} deliveries`);

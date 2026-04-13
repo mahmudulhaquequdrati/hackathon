@@ -56,14 +56,16 @@ export default function DeliveryScreen({ onBack: _onBack }: { onBack: () => void
 
   const fetchDeliveries = useCallback(async () => {
     const db = await getDatabase();
-    const localRows = await db.getAllAsync<Delivery>('SELECT *, 1 as _local FROM local_deliveries ORDER BY created_at DESC');
+    const localRows = await db.getAllAsync<Delivery & { deleted_locally?: number }>('SELECT *, 1 as _local FROM local_deliveries ORDER BY created_at DESC');
+    const deletedIds = new Set(localRows.filter(d => d.deleted_locally).map(d => d.id));
+    const activeLocalRows = localRows.filter(d => !d.deleted_locally);
     let serverRows: Delivery[] = [];
     try {
       const json = await api.get<{ data: { deliveries: Delivery[] } }>('/delivery/');
-      serverRows = json.data.deliveries || [];
+      serverRows = (json.data.deliveries || []).filter(d => !deletedIds.has(d.id));
     } catch {}
     const serverIds = new Set(serverRows.map(d => d.id));
-    const localOnly = localRows.filter(d => !serverIds.has(d.id));
+    const localOnly = activeLocalRows.filter(d => !serverIds.has(d.id));
     const all = [...serverRows, ...localOnly];
     all.sort((a, b) => (STATUS_CONFIG[a.status]?.order ?? 5) - (STATUS_CONFIG[b.status]?.order ?? 5));
     setDeliveries(all);
@@ -144,9 +146,14 @@ export default function DeliveryScreen({ onBack: _onBack }: { onBack: () => void
     Alert.alert('Delete', `Delete delivery ${id.slice(0, 8)}...?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
-        try { await api.delete(`/delivery/${id}`); } catch {}
+        let serverDeleted = false;
+        try { await api.delete(`/delivery/${id}`); serverDeleted = true; } catch {}
         const db = await getDatabase();
-        await db.runAsync('DELETE FROM local_deliveries WHERE id = ?', [id]);
+        if (serverDeleted) {
+          await db.runAsync('DELETE FROM local_deliveries WHERE id = ?', [id]);
+        } else {
+          await db.runAsync('UPDATE local_deliveries SET deleted_locally = 1 WHERE id = ?', [id]);
+        }
         await db.runAsync('DELETE FROM pod_receipts WHERE delivery_id = ?', [id]);
         fetchDeliveries();
       }},
