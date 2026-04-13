@@ -49,7 +49,7 @@ const PRIORITIES = [
 ];
 
 export default function DashboardScreen({ navigation }: any) {
-  const { user, logout, resetDevice, token, deviceId } = useAuthStore();
+  const { user, logout, resetDevice, initialize, token, deviceId, publicKey } = useAuthStore();
   const isOnline = useOnlineStatus();
   const {
     supplies, pendingCount, syncStatus, lastSyncAt,
@@ -145,7 +145,7 @@ export default function DashboardScreen({ navigation }: any) {
       'This will delete ALL device data (keys, TOTP, identity). You will need to re-register. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Reset', style: 'destructive', onPress: async () => { await resetDevice(); navigation.replace('Login'); } },
+        { text: 'Reset', style: 'destructive', onPress: async () => { await resetDevice(); await initialize(); navigation.replace('Login'); } },
       ],
     );
   };
@@ -166,6 +166,7 @@ export default function DashboardScreen({ navigation }: any) {
               resetTriageState();
               resetMeshState();
               await resetDevice();
+              await initialize();
               navigation.replace('Login');
             } catch (err) {
               Alert.alert('Error', 'Failed to delete data: ' + (err as Error).message);
@@ -353,17 +354,39 @@ export default function DashboardScreen({ navigation }: any) {
             <Text style={s.modalTitle}>Settings</Text>
             {user && (
               <>
-                <InfoRow label="Name" value={user.name || user.deviceId} />
+                <InfoRow label="Name" value={user.name || 'Not set'} />
                 <InfoRow label="Role" value={user.role} />
-                <InfoRow label="Auth" value={token ? 'JWT (online)' : 'TOTP (offline)'} valueColor={token ? colors.status.success : colors.status.warning} />
-                <TouchableOpacity onPress={() => {
-                  if (deviceId) { Clipboard.setString(deviceId); Alert.alert('Copied', 'Device ID copied'); }
-                }}>
-                  <InfoRow label="Device ID" value={deviceId || 'none'} valueColor={colors.accent.blueLight} />
-                </TouchableOpacity>
               </>
             )}
-            <View style={s.settingsBtns}>
+            <TouchableOpacity onPress={() => {
+              if (deviceId) { Clipboard.setString(deviceId); Alert.alert('Copied', 'Device ID copied'); }
+            }}>
+              <InfoRow label="Device ID" value={deviceId || 'none'} valueColor={colors.accent.blueLight} />
+            </TouchableOpacity>
+            <InfoRow label="Auth" value={token ? 'JWT (online)' : 'TOTP (offline)'} valueColor={token ? colors.status.success : colors.status.warning} />
+            <InfoRow label="Status" value={isOnline ? 'Online' : 'Offline'} valueColor={isOnline ? colors.status.success : colors.status.error} />
+            <InfoRow label="Supplies" value={`${supplies.length} items (${pendingCount} pending)`} />
+            {publicKey && (
+              <TouchableOpacity onPress={() => { Clipboard.setString(publicKey); Alert.alert('Copied', 'Public key copied'); }}>
+                <InfoRow label="Public Key" value={publicKey.substring(0, 16) + '...'} valueColor={colors.accent.blueLight} />
+              </TouchableOpacity>
+            )}
+            <InfoRow label="Sync" value={syncLabel} valueColor={syncColor} />
+            {lastSyncAt && <InfoRow label="Last Sync" value={new Date(lastSyncAt).toLocaleString()} />}
+
+            <ActionButton
+              title="Refresh"
+              onPress={async () => {
+                await initialize();
+                await loadSupplies();
+                Alert.alert('Refreshed', 'App state has been refreshed.');
+              }}
+              variant="outline"
+              size="sm"
+              fullWidth
+              style={{ marginTop: spacing.lg }}
+            />
+            <View style={[s.settingsBtns, { marginTop: spacing.sm }]}>
               <ActionButton title="Logout" onPress={handleLogout} variant="secondary" size="sm" style={{ flex: 1 }} />
               <View style={{ width: spacing.sm }} />
               <ActionButton title="Reset Device" onPress={handleResetDevice} variant="destructive" size="sm" style={{ flex: 1 }} />
